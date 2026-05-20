@@ -1,0 +1,39 @@
+FUNCTION z_sd_create_salesorder
+  IMPORTING
+    VALUE(i_header) TYPE bapisdhd1
+  EXPORTING
+    VALUE(e_vbeln) TYPE vbeln_va
+  TABLES
+    t_items LIKE bapisditm
+    t_partners LIKE bapiparnr
+    t_schedules LIKE bapischdl
+    t_return LIKE bapiret2.
+
+
+
+
+  CALL FUNCTION 'BAPI_SALESORDER_CREATEFROMDAT2'
+    EXPORTING
+      order_header_in    = i_header
+    IMPORTING
+      salesdocument      = e_vbeln
+    TABLES
+      order_items_in     = t_items
+      order_partners     = t_partners
+      order_schedules_in = t_schedules
+      return             = t_return.
+
+  " Commit/rollback happens here inside the async work process - safe!
+  IF e_vbeln IS NOT INITIAL AND
+     NOT line_exists( t_return[ type = 'E' ] ) AND
+     NOT line_exists( t_return[ type = 'A' ] ).
+    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+      EXPORTING
+        wait = abap_true.
+  ELSE.
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+  ENDIF.
+
+
+
+ENDFUNCTION.

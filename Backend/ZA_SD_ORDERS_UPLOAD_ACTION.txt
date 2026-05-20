@@ -1,0 +1,9 @@
+@EndUserText.label: 'Order Upload Action Abstract Entity'
+define root abstract entity ZA_SD_ORDERS_UPLOAD_ACTION
+{
+
+  rectype : abap.char( 1 );
+    @EndUserText.label: 'File Content'
+  filecontent : abap.string;
+
+}

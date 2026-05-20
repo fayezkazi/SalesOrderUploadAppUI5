@@ -1,0 +1,68 @@
+@EndUserText.label : 'Orders Staging Table for Upload'
+@AbapCatalog.enhancement.category : #NOT_EXTENSIBLE
+@AbapCatalog.tableCategory : #TRANSPARENT
+@AbapCatalog.deliveryClass : #A
+@AbapCatalog.dataMaintenance : #RESTRICTED
+define table zsd_stg_orders {
+  key client      : abap.clnt not null;
+  key stg_guid    : sysuuid_x16 not null;
+  @EndUserText.label : 'Order Type'
+  auart           : abap.char(4);
+  @EndUserText.label : 'Sales Organisation'
+  vkorg           : abap.char(4);
+  @EndUserText.label : 'Distribution Channel'
+  vtweg           : abap.char(2);
+  @EndUserText.label : 'Division'
+  spart           : abap.char(2);
+  @EndUserText.label : 'Sales Office'
+  vkbur           : abap.char(4);
+  @EndUserText.label : 'Sold-To Party'
+  kunnr_ag        : abap.char(10);
+  @EndUserText.label : 'Ship-To Party'
+  kunnr_we        : abap.char(10);
+  @EndUserText.label : 'Order Reason'
+  augru           : abap.char(3);
+  @EndUserText.label : 'Purchase Order Number'
+  bstnk           : abap.char(35);
+  @EndUserText.label : 'PO Date (MMDDYYYY)'
+  bstdk           : abap.char(10);
+  @EndUserText.label : 'Requested Delivery Date (MMDDYYYY)'
+  vdatu           : abap.char(10);
+  @EndUserText.label : 'Name 1'
+  name1           : abap.char(40);
+  @EndUserText.label : 'Name 2'
+  name2           : abap.char(40);
+  @EndUserText.label : 'Street and House Number'
+  stras           : abap.char(60);
+  @EndUserText.label : 'Street Supplement'
+  str_suppl       : abap.char(40);
+  @EndUserText.label : 'City'
+  ort01           : abap.char(40);
+  @EndUserText.label : 'Region / State'
+  regio           : abap.char(3);
+  @EndUserText.label : 'Postal Code'
+  pstlz           : abap.char(10);
+  @EndUserText.label : 'Email Address'
+  smtp_addr       : abap.char(241);
+  @EndUserText.label : 'Item Number'
+  posnr           : abap.char(6);
+  @EndUserText.label : 'Material'
+  matnr           : abap.char(18);
+  @EndUserText.label : 'Order Quantity (raw string)'
+  kwmeng          : abap.char(20);
+  @EndUserText.label : 'Sales Unit'
+  vrkme           : abap.char(3);
+  @EndUserText.label : 'Batch'
+  charg           : abap.char(10);
+  @EndUserText.label : 'Plant'
+  werks           : abap.char(4);
+  @EndUserText.label : 'Status (N=New, P=Processing, S=Success, E=Error)'
+  status          : abap.char(1);
+  @EndUserText.label : 'Status Message'
+  status_msg      : abap.char(255);
+  created_at      : abp_creation_tstmpl;
+  created_by      : abp_creation_user;
+  last_changed_at : abp_lastchange_tstmpl;
+  last_changed_by : abp_lastchange_user;
+
+}

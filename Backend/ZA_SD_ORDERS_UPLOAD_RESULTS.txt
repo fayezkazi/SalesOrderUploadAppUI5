@@ -1,0 +1,41 @@
+@EndUserText.label: 'Order Upload Result Abstract Entity'
+define abstract entity ZA_SD_ORDERS_UPLOAD_RESULTS
+
+{
+  key StgGuid       : sysuuid_x16;
+      Auart         : auart;
+      Vkorg         : vkorg;
+      Vtweg         : vtweg;
+      Spart         : spart;
+      Vkbur         : vkbur;
+      KunnrAg       : kunag;
+      KunnrWe       : kunwe;
+      Augru         : augru;
+      Bstnk         : bstnk;
+      Bstdk         : bstdk;
+      Vdatu         : edatu_vbak;
+      Name1         : name1_gp;
+      Name2         : name2_gp;
+      Stras         : stras_gp;
+      StrSuppl      : ad_strspp1;
+      Ort01         : ort01_gp;
+      Regio         : regio;
+      Pstlz         : pstlz;
+      SmtpAddr      : ad_smtpadr;
+      Posnr         : posnr_va;
+      Matnr         : matnr;
+      @Semantics.quantity.unitOfMeasure : 'vrkme'
+      Kwmeng        : kwmeng;
+      Vrkme         : vrkme;
+      Charg         : charg_d;
+      Werks         : werks_ext;
+      @EndUserText.label : 'Status'
+      Status        : abap.char(1);
+      @EndUserText.label : 'Status Message'
+      StatusMsg     : abap.char(255);
+      CreatedAt     : abp_creation_tstmpl;
+      CreatedBy     : abp_creation_user;
+      LastChangedAt : abp_lastchange_tstmpl;
+      LastChangedBy : abp_lastchange_user;
+
+}

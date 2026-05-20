@@ -1,0 +1,15 @@
+projection;
+strict ( 2 );
+
+define behavior for ZC_SD_STG_ORDERS //alias <alias_name>
+{
+  use create;
+  use update;
+  use delete;
+
+  use action excel_upload;
+  use action staging_data;
+
+  use action process_staging;
+  use action delete_staging;
+}
