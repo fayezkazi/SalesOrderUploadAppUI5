@@ -116,11 +116,16 @@ sap.ui.define([
                 Kwmeng: oItem.Kwmeng,
                 Vrkme: oItem.Vrkme,
                 Charg: oItem.Charg,
-                Werks: oItem.Werks
+                Werks: oItem.Werks,
+                Status: "M",
+                StatusMsg : "Modified"
             };
 
             oODataModel.update("/OrdersUpload(guid'" + sGuid + "')", oPayload, {
                 success: function () {
+                    oItem.Status = "M";
+                    oItem.StatusMsg = "Modified";
+                    oDetailModel.setProperty("/item", oItem);
                     that._oOriginalItem = JSON.parse(JSON.stringify(oItem));
                     oDetailModel.setProperty("/editMode", false);
 

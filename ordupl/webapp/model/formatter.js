@@ -12,6 +12,7 @@ sap.ui.define([], function () {
                 case "E": return "Error";
                 case "S": return "Success";
                 case "N": return "None";
+                case "M": return "Warning";
                 default:  return "None";
             }
         },
@@ -25,6 +26,7 @@ sap.ui.define([], function () {
                 case "E": return "sap-icon://error";
                 case "S": return "sap-icon://sys-enter-2";
                 case "N": return "sap-icon://pending";
+                case "M": return "sap-icon://edit";
                 default:  return "";
             }
         },
@@ -38,6 +40,7 @@ sap.ui.define([], function () {
                 case "E": return "Error";
                 case "S": return "Success";
                 case "N": return "New";
+                case "M": return "Modified";
                 default:  return sStatus || "";
             }
         }
