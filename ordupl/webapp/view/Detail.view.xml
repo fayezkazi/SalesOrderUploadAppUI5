@@ -1,0 +1,169 @@
+<mvc:View controllerName="zsd.ordupl.controller.Detail"
+    xmlns:mvc="sap.ui.core.mvc" displayBlock="true"
+    xmlns="sap.m"
+    xmlns:form="sap.ui.layout.form">
+    <Page id="detailPage"
+          showNavButton="true"
+          navButtonPress=".onNavBack"
+          title="Staged Order">
+        <headerContent>
+            <Button id="editBtn"
+                    text="Edit"
+                    type="Emphasized"
+                    press=".onEdit"
+                    visible="{= !${detail>/editMode} }"/>
+            <Button id="saveBtn"
+                    text="Save"
+                    type="Emphasized"
+                    press=".onSave"
+                    visible="{detail>/editMode}"/>
+            <Button id="cancelEditBtn"
+                    text="Cancel"
+                    press=".onCancelEdit"
+                    visible="{detail>/editMode}"/>
+            <Button id="deleteBtn"
+                    text="Delete"
+                    press=".onDelete"
+                    visible="{= !${detail>/editMode} }"/>
+        </headerContent>
+        <content>
+            <!-- Object identification header -->
+            <VBox id="_IDGenVBox" class="sapUiSmallMarginBegin sapUiSmallMarginTop sapUiSmallMarginBottom">
+                <Title id="_IDGenTitle" text="{detail>/item/Bstnk}" level="H2"/>
+                <Text id="_IDGenText" text="{detail>/item/KunnrAg}" class="sapUiTinyMarginTop"/>
+            </VBox>
+
+            <!-- Tab Bar -->
+            <IconTabBar id="iconTabBar" expandable="false" class="sapUiResponsiveContentPadding">
+                <items>
+
+                    <!-- Order Header Tab -->
+                    <IconTabFilter id="_IDGenIconTabFilter" text="Order Header" key="orderHeader">
+                        <form:SimpleForm id="_IDGenSimpleForm1"
+                            editable="{detail>/editMode}"
+                            layout="ResponsiveGridLayout"
+                            labelSpanXL="4" labelSpanL="4" labelSpanM="4" labelSpanS="12"
+                            adjustLabelSpan="false"
+                            emptySpanXL="0" emptySpanL="0" emptySpanM="0" emptySpanS="0"
+                            columnsXL="3" columnsL="3" columnsM="2"
+                            singleContainerFullSize="false">
+                            <form:content>
+                                <Label id="_IDGenLabel" text="Order Type"/>
+                                <Input id="_IDGenInput" value="{detail>/item/Auart}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel1" text="Sales Org"/>
+                                <Input id="_IDGenInput1" value="{detail>/item/Vkorg}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel2" text="Dist. Channel"/>
+                                <Input id="_IDGenInput2" value="{detail>/item/Vtweg}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel3" text="Division"/>
+                                <Input id="_IDGenInput3" value="{detail>/item/Spart}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel4" text="Sales Office"/>
+                                <Input id="_IDGenInput4" value="{detail>/item/Vkbur}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel5" text="Order Reason"/>
+                                <Input id="_IDGenInput5" value="{detail>/item/Augru}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel6" text="PO Number"/>
+                                <Input id="_IDGenInput6" value="{detail>/item/Bstnk}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel7" text="PO Date"/>
+                                <Input id="_IDGenInput7" value="{detail>/item/Bstdk}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel8" text="Req. Delivery Date"/>
+                                <Input id="_IDGenInput8" value="{detail>/item/Vdatu}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel9" text="Sold-To Party"/>
+                                <Input id="_IDGenInput9" value="{detail>/item/KunnrAg}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel10" text="Ship-To Party"/>
+                                <Input id="_IDGenInput10" value="{detail>/item/KunnrWe}" editable="{detail>/editMode}"/>
+                            </form:content>
+                        </form:SimpleForm>
+                    </IconTabFilter>
+
+                    <!-- Address Tab -->
+                    <IconTabFilter id="_IDGenIconTabFilter1" text="Address" key="address">
+                        <form:SimpleForm id="_IDGenSimpleForm2"
+                            editable="{detail>/editMode}"
+                            layout="ResponsiveGridLayout"
+                            labelSpanXL="4" labelSpanL="4" labelSpanM="4" labelSpanS="12"
+                            adjustLabelSpan="false"
+                            emptySpanXL="0" emptySpanL="0" emptySpanM="0" emptySpanS="0"
+                            columnsXL="3" columnsL="3" columnsM="2"
+                            singleContainerFullSize="false">
+                            <form:content>
+                                <Label id="_IDGenLabel11" text="Name 1"/>
+                                <Input id="_IDGenInput11" value="{detail>/item/Name1}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel12" text="Name 2"/>
+                                <Input id="_IDGenInput12" value="{detail>/item/Name2}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel13" text="Street"/>
+                                <Input id="_IDGenInput13" value="{detail>/item/Stras}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel14" text="Street 2"/>
+                                <Input id="_IDGenInput14" value="{detail>/item/StrSuppl}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel15" text="City"/>
+                                <Input id="_IDGenInput15" value="{detail>/item/Ort01}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel16" text="Region"/>
+                                <Input id="_IDGenInput16" value="{detail>/item/Regio}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel17" text="Postal Code"/>
+                                <Input id="_IDGenInput17" value="{detail>/item/Pstlz}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel18" text="Email Address"/>
+                                <Input id="_IDGenInput18" value="{detail>/item/SmtpAddr}" editable="{detail>/editMode}"/>
+                            </form:content>
+                        </form:SimpleForm>
+                    </IconTabFilter>
+
+                    <!-- Order Item Tab -->
+                    <IconTabFilter id="_IDGenIconTabFilter2" text="Order Item" key="orderItem">
+                        <form:SimpleForm id="_IDGenSimpleForm3"
+                            editable="{detail>/editMode}"
+                            layout="ResponsiveGridLayout"
+                            labelSpanXL="4" labelSpanL="4" labelSpanM="4" labelSpanS="12"
+                            adjustLabelSpan="false"
+                            emptySpanXL="0" emptySpanL="0" emptySpanM="0" emptySpanS="0"
+                            columnsXL="3" columnsL="3" columnsM="2"
+                            singleContainerFullSize="false">
+                            <form:content>
+                                <Label id="_IDGenLabel19" text="Item No."/>
+                                <Input id="_IDGenInput19" value="{detail>/item/Posnr}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel20" text="Material"/>
+                                <Input id="_IDGenInput20" value="{detail>/item/Matnr}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel21" text="Order Qty"/>
+                                <Input id="_IDGenInput21" value="{detail>/item/Kwmeng}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel22" text="Base UOM"/>
+                                <Input id="_IDGenInput22" value="{detail>/item/Vrkme}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel23" text="Batch"/>
+                                <Input id="_IDGenInput23" value="{detail>/item/Charg}" editable="{detail>/editMode}"/>
+                                <Label id="_IDGenLabel24" text="Plant"/>
+                                <Input id="_IDGenInput24" value="{detail>/item/Werks}" editable="{detail>/editMode}"/>
+                            </form:content>
+                        </form:SimpleForm>
+                    </IconTabFilter>
+
+                    <!-- Admin Data Tab -->
+                    <IconTabFilter id="_IDGenIconTabFilter3" text="Admin Data" key="adminData">
+                        <form:SimpleForm id="_IDGenSimpleForm4"
+                            editable="false"
+                            layout="ResponsiveGridLayout"
+                            labelSpanXL="4" labelSpanL="4" labelSpanM="4" labelSpanS="12"
+                            adjustLabelSpan="false"
+                            emptySpanXL="0" emptySpanL="0" emptySpanM="0" emptySpanS="0"
+                            columnsXL="3" columnsL="3" columnsM="2"
+                            singleContainerFullSize="false">
+                            <form:content>
+                                <Label id="_IDGenLabel25" text="Status"/>
+                                <ObjectStatus id="_IDGenObjectStatus"
+                                    state="{path: 'detail>/item/Status', formatter: '.formatter.statusState'}"
+                                    icon="{path: 'detail>/item/Status', formatter: '.formatter.statusIcon'}"
+                                    text="{path: 'detail>/item/Status', formatter: '.formatter.statusText'}"/>
+                                <Label id="_IDGenLabel26" text="Status Message"/>
+                                <Input id="_IDGenInput25" value="{detail>/item/StatusMsg}" editable="false"/>
+                                <Label id="_IDGenLabel27" text="Created At"/>
+                                <Input id="_IDGenInput26" value="{detail>/item/CreatedAt}" editable="false"/>
+                                <Label id="_IDGenLabel28" text="Created By"/>
+                                <Input id="_IDGenInput27" value="{detail>/item/CreatedBy}" editable="false"/>
+                                <Label id="_IDGenLabel29" text="Last Changed At"/>
+                                <Input id="_IDGenInput28" value="{detail>/item/LastChangedAt}" editable="false"/>
+                                <Label id="_IDGenLabel30" text="Last Changed By"/>
+                                <Input id="_IDGenInput29" value="{detail>/item/LastChangedBy}" editable="false"/>
+                            </form:content>
+                        </form:SimpleForm>
+                    </IconTabFilter>
+
+                </items>
+            </IconTabBar>
+        </content>
+    </Page>
+</mvc:View>

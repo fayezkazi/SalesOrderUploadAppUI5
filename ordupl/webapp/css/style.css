@@ -1,0 +1,47 @@
+/* Enter your custom styles here */
+
+/* ---- Page content section: prevent unwanted scrollbars ---- */
+.orderUploadPage > section {
+    overflow: hidden;
+}
+
+/* ---- Bottom VBox: explicit height is set by _adjustHeight() in the controller ---- */
+.orderUploadBottomVBox {
+    overflow: hidden;
+}
+
+/* ---- SAPUI5 wraps VBox children in div.sapMFlexItem; stretch it to fill the VBox height ---- */
+.orderUploadBottomVBox > .sapMFlexItem {
+    flex: 1 1 0;
+    min-height: 0;
+}
+
+/* ---- Table fills its flex-item wrapper so visibleRowCountMode=Auto gets a pixel height ---- */
+.orderUploadResultTable {
+    height: 100%;
+}
+
+/* ---- Compact drop zone strip (in top panel) ---- */
+.orderUploadDropZoneCompact {
+    border: 1px dashed #c0c0c0;
+    padding: 0.5rem;
+    cursor: pointer;
+    border-radius: 4px;
+    background-color: #fafafa;
+    min-height: 2.5rem;
+}
+
+.orderUploadDropZoneCompact.orderUploadDropZoneDragOver {
+    border: 2px dashed #0a6ed1 !important;
+    background-color: #f0f7ff;
+}
+
+.orderUploadDropIconSmall {
+    font-size: 1.2rem !important;
+    color: #c0c0c0;
+}
+
+.orderUploadDropTextSmall {
+    color: #0a6ed1;
+    font-size: 0.875rem;
+}
