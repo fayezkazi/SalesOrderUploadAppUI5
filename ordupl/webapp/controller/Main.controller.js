@@ -4,8 +4,9 @@ sap.ui.define([
     "sap/m/MessageBox",
     "sap/ui/model/json/JSONModel",
     "sap/ui/core/ResizeHandler",
+    "sap/ui/core/BusyIndicator",
     "zsd/ordupl/model/formatter"
-], function (Controller, MessageToast, MessageBox, JSONModel, ResizeHandler, formatter) {
+], function (Controller, MessageToast, MessageBox, JSONModel, ResizeHandler, BusyIndicator, formatter) {
     "use strict";
 
     return Controller.extend("zsd.ordupl.controller.Main", {
@@ -281,7 +282,7 @@ sap.ui.define([
             var oResultsModel = this.getOwnerComponent().getModel("results");
             var aItems = oResultsModel.getProperty("/items") || [];
             var bHasUnprocessed = aItems.some(function (oItem) {
-                return oItem.Status === "N" || oItem.Status === "E";
+                return oItem.Status === "N" || oItem.Status === "E" || oItem.Status === "M";
             });
             if (!bHasUnprocessed) {
                 MessageBox.information("There are no records to process.");
@@ -289,39 +290,52 @@ sap.ui.define([
             }
             var oModel = this.getView().getModel();
             var that = this;
-            oModel.callFunction("/process_staging", {
-                method: "POST",
-                urlParameters: {
-                    StgGuid: "00000000-0000-0000-0000-000000000000"
-                },
-                success: function (oData) {
-                    var aItems = [];
-                    if (oData) {
-                        if (Array.isArray(oData.results)) {
-                            aItems = oData.results;
-                        } else if (Array.isArray(oData)) {
-                            aItems = oData;
-                        } else if (typeof oData === "object" && Object.keys(oData).some(function (k) { return k !== "__metadata"; })) {
-                            aItems = [oData];
+            MessageBox.confirm("This will start creating the Sales Order. Do you want to Continue?", {
+                title: "Confirm Execution",
+                actions: [MessageBox.Action.YES, MessageBox.Action.NO],
+                emphasizedAction: MessageBox.Action.YES,
+                onClose: function (sAction) {
+                    if (sAction !== MessageBox.Action.YES) {
+                        return;
+                    }
+                    BusyIndicator.show(0);
+                    oModel.callFunction("/process_staging", {
+                        method: "POST",
+                        urlParameters: {
+                            StgGuid: "00000000-0000-0000-0000-000000000000"
+                        },
+                        success: function (oData) {
+                            BusyIndicator.hide();
+                            var aReturnedItems = [];
+                            if (oData) {
+                                if (Array.isArray(oData.results)) {
+                                    aReturnedItems = oData.results;
+                                } else if (Array.isArray(oData)) {
+                                    aReturnedItems = oData;
+                                } else if (typeof oData === "object" && Object.keys(oData).some(function (k) { return k !== "__metadata"; })) {
+                                    aReturnedItems = [oData];
+                                }
+                            }
+                            aReturnedItems = aReturnedItems.map(function (oItem) {
+                                var oConverted = Object.assign({}, oItem);
+                                oConverted.Bstdk = that._formatODataDate(oItem.Bstdk);
+                                oConverted.Vdatu = that._formatODataDate(oItem.Vdatu);
+                                return oConverted;
+                            });
+                            that.getOwnerComponent().getModel("results").setProperty("/items", aReturnedItems);
+                            that._updateExecuteButtonState(aReturnedItems);
+                            MessageToast.show("Processing complete. " + aReturnedItems.length + " record(s) returned.");
+                        },
+                        error: function (oError) {
+                            BusyIndicator.hide();
+                            var sMsg = "An error occurred during processing.";
+                            if (oError.responseJSON && oError.responseJSON.error &&
+                                oError.responseJSON.error.message && oError.responseJSON.error.message.value) {
+                                sMsg = oError.responseJSON.error.message.value;
+                            }
+                            MessageBox.error(sMsg);
                         }
-                    }
-                    aItems = aItems.map(function (oItem) {
-                        var oConverted = Object.assign({}, oItem);
-                        oConverted.Bstdk = that._formatODataDate(oItem.Bstdk);
-                        oConverted.Vdatu = that._formatODataDate(oItem.Vdatu);
-                        return oConverted;
                     });
-                    that.getOwnerComponent().getModel("results").setProperty("/items", aItems);
-                    that._updateExecuteButtonState(aItems);
-                    MessageToast.show("Processing complete. " + aItems.length + " record(s) returned.");
-                },
-                error: function (oError) {
-                    var sMsg = "An error occurred during processing.";
-                    if (oError.responseJSON && oError.responseJSON.error &&
-                        oError.responseJSON.error.message && oError.responseJSON.error.message.value) {
-                        sMsg = oError.responseJSON.error.message.value;
-                    }
-                    MessageBox.error(sMsg);
                 }
             });
         },
@@ -407,6 +421,70 @@ sap.ui.define([
                     MessageBox.error(sMsg);
                 }
             });
+        },
+
+        onDownloadExcel: function () {
+            var XLSX = window.XLSX;
+            if (!XLSX) {
+                MessageBox.error("XLSX library not loaded. Cannot download.");
+                return;
+            }
+            var aItems = this.getOwnerComponent().getModel("results").getProperty("/items") || [];
+            if (aItems.length === 0) {
+                MessageToast.show("No data to download.");
+                return;
+            }
+
+            // Column definition: { header, field }
+            var aColumns = [
+                { header: "Status",              field: "StatusMsg"  },
+                { header: "Order Type",          field: "Auart"      },
+                { header: "Sales Org",           field: "Vkorg"      },
+                { header: "Dist. Channel",       field: "Vtweg"      },
+                { header: "Division",            field: "Spart"      },
+                { header: "Sales Office",        field: "Vkbur"      },
+                { header: "Sold-To Party",       field: "KunnrAg"    },
+                { header: "Ship-To Party",       field: "KunnrWe"    },
+                { header: "Order Reason",        field: "Augru"      },
+                { header: "PO Number",           field: "Bstnk"      },
+                { header: "PO Date",             field: "Bstdk"      },
+                { header: "Req. Delivery Date",  field: "Vdatu"      },
+                { header: "Name 1",              field: "Name1"      },
+                { header: "Name 2",              field: "Name2"      },
+                { header: "Street",              field: "Stras"      },
+                { header: "Street 2",            field: "StrSuppl"   },
+                { header: "City",                field: "Ort01"      },
+                { header: "Region",              field: "Regio"      },
+                { header: "Postal Code",         field: "Pstlz"      },
+                { header: "Email Address",       field: "SmtpAddr"   },
+                { header: "Item No.",            field: "Posnr"      },
+                { header: "Material",            field: "Matnr"      },
+                { header: "Order Qty",           field: "Kwmeng"     },
+                { header: "Base UOM",            field: "Vrkme"      },
+                { header: "Batch",               field: "Charg"      },
+                { header: "Plant",               field: "Werks"      }
+            ];
+
+            // Build rows: first row = headers, then data rows
+            var aSheetData = [aColumns.map(function (oCol) { return oCol.header; })];
+            aItems.forEach(function (oItem) {
+                aSheetData.push(aColumns.map(function (oCol) {
+                    var vVal = oItem[oCol.field];
+                    return (vVal === undefined || vVal === null) ? "" : vVal;
+                }));
+            });
+
+            var bHasUnprocessed = aItems.some(function (oItem) {
+                return oItem.Status === "N" || oItem.Status === "M" || oItem.Status === "E";
+            });
+            var sFileName = bHasUnprocessed
+                ? "Sales_Order_Upload_Unprocessed_Records.xlsx"
+                : "Sales_Order_Upload_Processed_Records.xlsx";
+
+            var oWorksheet = XLSX.utils.aoa_to_sheet(aSheetData);
+            var oWorkbook  = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(oWorkbook, oWorksheet, "Import Results");
+            XLSX.writeFile(oWorkbook, sFileName);
         },
 
         onDeleteStagingData: function () {
