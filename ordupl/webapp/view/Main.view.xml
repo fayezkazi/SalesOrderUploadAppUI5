@@ -76,6 +76,10 @@
                                         text="{results>StatusMsg}"/>
                                 </table:template>
                             </table:Column>
+                            <table:Column id="_IDGenColumnSO" width="8rem">
+                                <Label id="_IDGenLabelSO" text="Sales Order"/>
+                                <table:template><Text id="_IDGenTextSO" text="{results>Vbeln}" wrapping="false"/></table:template>
+                            </table:Column>                            
                             <table:Column id="_IDGenColumn1" width="8rem">
                                 <Label id="_IDGenLabel33" text="Order Type"/>
                                 <table:template><Text id="_IDGenText1" text="{results>Auart}" wrapping="false"/></table:template>

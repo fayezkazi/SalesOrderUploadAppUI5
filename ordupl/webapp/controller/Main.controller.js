@@ -438,6 +438,7 @@ sap.ui.define([
             // Column definition: { header, field }
             var aColumns = [
                 { header: "Status",              field: "StatusMsg"  },
+                { header: "Sales Order",         field: "Vbeln"      },
                 { header: "Order Type",          field: "Auart"      },
                 { header: "Sales Org",           field: "Vkorg"      },
                 { header: "Dist. Channel",       field: "Vtweg"      },
