@@ -18,6 +18,34 @@ sap.ui.define([
             this._bDropEventsAttached = false;
             this._createHiddenFileInput();
             this.getOwnerComponent().setModel(new JSONModel({ items: [], hasUnprocessed: false, itemsCount: 0 }), "results");
+            this.getOwnerComponent().setModel(new JSONModel({
+                RcvPortType: "LS",
+                RcvPort: "SAPD41",
+                SndPortType: "KU",
+                SndPort: "",
+                SndSystem: "",
+                MsgType: "ORDERS",
+                IdocType: "ORDERS05",
+                CreateMethodIndex: 2
+            }), "filters");
+            this._loadIdocControl();
+        },
+
+        _loadIdocControl: function () {
+            var oModel = this.getOwnerComponent().getModel();
+            var oFiltersModel = this.getOwnerComponent().getModel("filters");
+            oModel.read("/IdocControl", {
+                success: function (oData) {
+                    var aResults = (oData && oData.results) ? oData.results : [];
+                    if (aResults.length > 0) {
+                        oFiltersModel.setProperty("/SndPort", aResults[0].SendingPort || "");
+                        oFiltersModel.setProperty("/SndSystem", aResults[0].SendingPartner || "");
+                    }
+                },
+                error: function () {
+                    // IdocControl could not be loaded; SndPort and SndSystem remain empty
+                }
+            });
         },
 
         _createHiddenFileInput: function () {
@@ -69,10 +97,10 @@ sap.ui.define([
         },
 
         _adjustHeight: function () {
-            var that        = this;
-            var oPanel      = this.byId("topPanel").getDomRef();
+            var that = this;
+            var oPanel = this.byId("topPanel").getDomRef();
             var oBottomVBox = this.byId("bottomVBox").getDomRef();
-            var oTable      = this.byId("resultTable");
+            var oTable = this.byId("resultTable");
             if (!oPanel || !oBottomVBox || !oTable) { return; }
 
             // Walk up from the VBox to find the page content <section>
@@ -90,7 +118,7 @@ sap.ui.define([
             }
 
             var iPanelH = oPanel.getBoundingClientRect().height;
-            var iAvail  = Math.floor(iSectionH - iPanelH);
+            var iAvail = Math.floor(iSectionH - iPanelH);
             if (iAvail <= 0) { return; }
 
             // Set explicit VBox height so any CSS rules have a pixel reference
@@ -102,8 +130,8 @@ sap.ui.define([
             var iOverhead = 0;
             if (oTableDom) {
                 [".sapUiTableExt",       // extension toolbar (title + buttons)
-                 ".sapUiTableColHdrCnt", // column header row
-                 ".sapUiTableFtr"        // footer toolbar (Cleanup + Execute)
+                    ".sapUiTableColHdrCnt", // column header row
+                    ".sapUiTableFtr"        // footer toolbar (Cleanup + Execute)
                 ].forEach(function (sSel) {
                     var el = oTableDom.querySelector(sSel);
                     if (el) { iOverhead += Math.ceil(el.getBoundingClientRect().height); }
@@ -135,6 +163,32 @@ sap.ui.define([
             if (this._oFileInput && this._oFileInput.parentNode) {
                 this._oFileInput.parentNode.removeChild(this._oFileInput);
             }
+        },
+
+        onDownloadTemplate: function () {
+            var XLSX = window.XLSX;
+            if (!XLSX) {
+                MessageBox.error("XLSX library not loaded. Please check the application configuration.");
+                return;
+            }
+            var aHeaders = [
+                "VBAK-AUART", "VBAK-VKORG", "VBAK-VTWEG", "VBAK-SPART", "VBAK-VKBUR",
+                "VBAK-KUNNR", "VBRK-KUNWE", "VBAK-AUGRU", "VBAK-BSTNK", "VBAK-BSTDK",
+                "VBAK-VDATU", "KNA1-NAME1", "KNA1-NAME2", "KNA1-STRAS", "ADRC-STR_SUPPL1",
+                "KNA1-ORT01", "KNA1-REGIO", "KNA1-PSTLZ", "ADR6-SMTP_ADDR",
+                "VBAP-POSNR", "VBAP-MATNR", "VBAP-KWMENG", "VBAP-MEINS", "VBAP-CHARG", "VBAP-WERKS"
+            ];
+            var aLabels = [
+                "Order Type", "Sales Organization", "Distribution Channel", "Division", "Sales Office",
+                "Sold To Party", "Ship To Party", "Order Reason", "PO Number", "PO Date(MMDDYYYY)",
+                "Req.Delivery Date(MMDDYYYY)", "Name 1", "Name 2", "Street", "Street 2",
+                "City", "Region", "Postal Code", "Email Address",
+                "Item No.", "Material", "Order Quantity", "Base UOM", "Batch", "Plant"
+            ];
+            var oWorkbook = XLSX.utils.book_new();
+            var oWorksheet = XLSX.utils.aoa_to_sheet([aHeaders, aLabels]);
+            XLSX.utils.book_append_sheet(oWorkbook, oWorksheet, "Template");
+            XLSX.writeFile(oWorkbook, "Blank_Order_Upload_Template.xlsx");
         },
 
         onBrowse: function () {
@@ -179,6 +233,15 @@ sap.ui.define([
                     var oWorksheet = oWorkbook.Sheets[sFirstSheet];
                     var aRows = XLSX.utils.sheet_to_json(oWorksheet, { defval: "" });
 
+                    // Replace '-' with '_' in all column header keys (e.g. VBAK-AUART → VBAK_AUART)
+                    aRows = aRows.map(function (oRow) {
+                        var oNewRow = {};
+                        Object.keys(oRow).forEach(function (sKey) {
+                            oNewRow[sKey.replace(/-/g, "_")] = oRow[sKey];
+                        });
+                        return oNewRow;
+                    });
+
                     //Remove the first row as it contains the column headers
                     if (aRows.length > 0) {
                         aRows.shift();
@@ -203,6 +266,16 @@ sap.ui.define([
                                     aItems = [oData];
                                 }
                             }
+
+                            //Sort aItems by Bstnk (PO Number) ascending and by Posnr (Item No.) ascending
+                            aItems.sort(function (a, b) {
+                                if (a.Bstnk < b.Bstnk) { return -1; }
+                                if (a.Bstnk > b.Bstnk) { return 1; }
+                                var iPosnrA = parseInt(a.Posnr, 10) || 0;
+                                var iPosnrB = parseInt(b.Posnr, 10) || 0;
+                                return iPosnrA - iPosnrB;
+                            });
+
                             aItems = aItems.map(function (oItem) {
                                 var oConverted = Object.assign({}, oItem);
                                 oConverted.Bstdk = that._formatODataDate(oItem.Bstdk);
@@ -289,6 +362,16 @@ sap.ui.define([
                 return;
             }
             var oModel = this.getView().getModel();
+
+            var oFilters = this.getOwnerComponent().getModel("filters").getData();
+            var sMode = {
+                // API: this.byId("rbAPI").getSelected() ? "X" : "",
+                // BAPI: this.byId("rbBAPI").getSelected() ? "X" : "",
+                // IDOC: this.byId("rbIDOC").getSelected() ? "X" : ""
+                ProcessMode: oFilters.CreateMethodIndex === 0 ? "API" :
+                             oFilters.CreateMethodIndex === 1 ? "BAPI" :
+                             oFilters.CreateMethodIndex === 2 ? "IDOC" : ""
+            };
             var that = this;
             MessageBox.confirm("This will start creating the Sales Order. Do you want to Continue?", {
                 title: "Confirm Execution",
@@ -302,7 +385,16 @@ sap.ui.define([
                     oModel.callFunction("/process_staging", {
                         method: "POST",
                         urlParameters: {
-                            StgGuid: "00000000-0000-0000-0000-000000000000"
+                            StgGuid: "00000000-0000-0000-0000-000000000000",
+                            RCVPOR: oFilters.RcvPort,
+                            RCVPRT: oFilters.RcvPortType,
+                            SNDPOR: oFilters.SndPort,
+                            SNDPST: oFilters.SndPortType,
+                            SNDPRN: oFilters.SndSystem,
+                            MESTYP: oFilters.MsgType,
+                            IDOCTP: oFilters.IdocType,
+
+                            PROCESSMODE: sMode.ProcessMode
                         },
                         success: function (oData) {
                             BusyIndicator.hide();
@@ -344,7 +436,7 @@ sap.ui.define([
             var oModel = this.getView().getModel();
             var that = this;
             //oModel.read("/OrdersUpload", {
-            oModel.callFunction("/staging_data", {                
+            oModel.callFunction("/staging_data", {
                 method: "POST",
                 urlParameters: {
                     //StgGuid: "00000000-0000-0000-0000-000000000000"
@@ -361,6 +453,13 @@ sap.ui.define([
                             aItems = [oData];
                         }
                     }
+                    aItems.sort(function (a, b) {
+                        if (a.Bstnk < b.Bstnk) { return -1; }
+                        if (a.Bstnk > b.Bstnk) { return 1; }
+                        var iPosnrA = parseInt(a.Posnr, 10) || 0;
+                        var iPosnrB = parseInt(b.Posnr, 10) || 0;
+                        return iPosnrA - iPosnrB;
+                    });
                     aItems = aItems.map(function (oItem) {
                         var oConverted = Object.assign({}, oItem);
                         oConverted.Bstdk = that._formatODataDate(oItem.Bstdk);
@@ -385,7 +484,7 @@ sap.ui.define([
         onProcessedData: function () {
             var oModel = this.getView().getModel();
             var that = this;
-            oModel.callFunction("/staging_data", {                
+            oModel.callFunction("/staging_data", {
                 method: "POST",
                 urlParameters: {
                     //StgGuid: "00000000-0000-0000-0000-000000000000"
@@ -437,33 +536,33 @@ sap.ui.define([
 
             // Column definition: { header, field }
             var aColumns = [
-                { header: "Status",              field: "StatusMsg"  },
-                { header: "Sales Order",         field: "Vbeln"      },
-                { header: "Order Type",          field: "Auart"      },
-                { header: "Sales Org",           field: "Vkorg"      },
-                { header: "Dist. Channel",       field: "Vtweg"      },
-                { header: "Division",            field: "Spart"      },
-                { header: "Sales Office",        field: "Vkbur"      },
-                { header: "Sold-To Party",       field: "KunnrAg"    },
-                { header: "Ship-To Party",       field: "KunnrWe"    },
-                { header: "Order Reason",        field: "Augru"      },
-                { header: "PO Number",           field: "Bstnk"      },
-                { header: "PO Date",             field: "Bstdk"      },
-                { header: "Req. Delivery Date",  field: "Vdatu"      },
-                { header: "Name 1",              field: "Name1"      },
-                { header: "Name 2",              field: "Name2"      },
-                { header: "Street",              field: "Stras"      },
-                { header: "Street 2",            field: "StrSuppl"   },
-                { header: "City",                field: "Ort01"      },
-                { header: "Region",              field: "Regio"      },
-                { header: "Postal Code",         field: "Pstlz"      },
-                { header: "Email Address",       field: "SmtpAddr"   },
-                { header: "Item No.",            field: "Posnr"      },
-                { header: "Material",            field: "Matnr"      },
-                { header: "Order Qty",           field: "Kwmeng"     },
-                { header: "Base UOM",            field: "Vrkme"      },
-                { header: "Batch",               field: "Charg"      },
-                { header: "Plant",               field: "Werks"      }
+                { header: "Status", field: "StatusMsg" },
+                { header: "Sales Order", field: "Vbeln" },
+                { header: "Order Type", field: "Auart" },
+                { header: "Sales Org", field: "Vkorg" },
+                { header: "Dist. Channel", field: "Vtweg" },
+                { header: "Division", field: "Spart" },
+                { header: "Sales Office", field: "Vkbur" },
+                { header: "Sold-To Party", field: "KunnrAg" },
+                { header: "Ship-To Party", field: "KunnrWe" },
+                { header: "Order Reason", field: "Augru" },
+                { header: "PO Number", field: "Bstnk" },
+                { header: "PO Date", field: "Bstdk" },
+                { header: "Req. Delivery Date", field: "Vdatu" },
+                { header: "Name 1", field: "Name1" },
+                { header: "Name 2", field: "Name2" },
+                { header: "Street", field: "Stras" },
+                { header: "Street 2", field: "StrSuppl" },
+                { header: "City", field: "Ort01" },
+                { header: "Region", field: "Regio" },
+                { header: "Postal Code", field: "Pstlz" },
+                { header: "Email Address", field: "SmtpAddr" },
+                { header: "Item No.", field: "Posnr" },
+                { header: "Material", field: "Matnr" },
+                { header: "Order Qty", field: "Kwmeng" },
+                { header: "Base UOM", field: "Vrkme" },
+                { header: "Batch", field: "Charg" },
+                { header: "Plant", field: "Werks" }
             ];
 
             // Build rows: first row = headers, then data rows
@@ -483,7 +582,7 @@ sap.ui.define([
                 : "Sales_Order_Upload_Processed_Records.xlsx";
 
             var oWorksheet = XLSX.utils.aoa_to_sheet(aSheetData);
-            var oWorkbook  = XLSX.utils.book_new();
+            var oWorkbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(oWorkbook, oWorksheet, "Import Results");
             XLSX.writeFile(oWorkbook, sFileName);
         },

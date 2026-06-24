@@ -47,8 +47,6 @@
                 <Key>
                     <PropertyRef Name="StgGuid"/>
                 </Key>
-                <Property Name="process_staging_ac" Type="Edm.Boolean" sap:label="Dyn. Action Control" sap:creatable="false" sap:updatable="false" sap:sortable="false" sap:filterable="false"/>
-                <Property Name="staging_data_ac" Type="Edm.Boolean" sap:label="Dyn. Action Control" sap:creatable="false" sap:updatable="false" sap:sortable="false" sap:filterable="false"/>
                 <Property Name="Delete_mc" Type="Edm.Boolean" sap:label="Dyn. Method Control" sap:creatable="false" sap:updatable="false" sap:sortable="false" sap:filterable="false"/>
                 <Property Name="Update_mc" Type="Edm.Boolean" sap:label="Dyn. Method Control" sap:creatable="false" sap:updatable="false" sap:sortable="false" sap:filterable="false"/>
                 <Property Name="StgGuid" Type="Edm.Guid" Nullable="false" sap:label="UUID" sap:quickinfo="16 Byte UUID in 16 Bytes (Raw Format)" sap:creatable="false" sap:updatable="false"/>
@@ -69,20 +67,31 @@
                 <Property Name="StrSuppl" Type="Edm.String" MaxLength="40" sap:label="Street 2"/>
                 <Property Name="Ort01" Type="Edm.String" MaxLength="40" sap:label="City"/>
                 <Property Name="Regio" Type="Edm.String" MaxLength="3" sap:label="Region"/>
+                <Property Name="Land1" Type="Edm.String" MaxLength="3" sap:display-format="UpperCase" sap:label="Country" sap:quickinfo="Country/Region Key"/>
                 <Property Name="Pstlz" Type="Edm.String" MaxLength="10" sap:label="Postal Code"/>
                 <Property Name="SmtpAddr" Type="Edm.String" MaxLength="241" sap:label="Email Address"/>
+                <Property Name="EdiHdrText" Type="Edm.String" MaxLength="132" sap:label="EDI Header Text" sap:quickinfo="Text Line"/>
                 <Property Name="Posnr" Type="Edm.String" MaxLength="6" sap:label="Item No."/>
                 <Property Name="Matnr" Type="Edm.String" MaxLength="18" sap:label="Material"/>
                 <Property Name="Kwmeng" Type="Edm.String" MaxLength="20" sap:label="Order Qty"/>
                 <Property Name="Vrkme" Type="Edm.String" MaxLength="3" sap:label="Base UOM"/>
                 <Property Name="Charg" Type="Edm.String" MaxLength="10" sap:label="Batch"/>
                 <Property Name="Werks" Type="Edm.String" MaxLength="4" sap:label="Plant"/>
-                <Property Name="Status" Type="Edm.String" MaxLength="1" sap:label="Status" sap:creatable="false" sap:updatable="false"/>
-                <Property Name="StatusMsg" Type="Edm.String" MaxLength="255" sap:label="Status Message" sap:creatable="false" sap:updatable="false"/>
+                <Property Name="Status" Type="Edm.String" MaxLength="1" sap:label="Status"/>
+                <Property Name="StatusMsg" Type="Edm.String" MaxLength="255" sap:label="Status Message"/>
+                <Property Name="Vbeln" Type="Edm.String" MaxLength="10" sap:display-format="UpperCase" sap:label="Sales Order" sap:quickinfo="Sales Document"/>
                 <Property Name="CreatedAt" Type="Edm.DateTimeOffset" Precision="7" sap:label="Created At" sap:quickinfo="Creation Date Time" sap:creatable="false" sap:updatable="false"/>
                 <Property Name="CreatedBy" Type="Edm.String" MaxLength="12" sap:display-format="UpperCase" sap:label="Created By" sap:quickinfo="Created By User" sap:creatable="false" sap:updatable="false"/>
                 <Property Name="LastChangedAt" Type="Edm.DateTimeOffset" Precision="7" sap:label="Changed On" sap:quickinfo="Last Change Date Time" sap:creatable="false" sap:updatable="false"/>
                 <Property Name="LastChangedBy" Type="Edm.String" MaxLength="12" sap:display-format="UpperCase" sap:label="Changed By" sap:quickinfo="Last Changed By User" sap:creatable="false" sap:updatable="false"/>
+            </EntityType>
+            <EntityType Name="IdocControlType" sap:label="Order Upload IDOC Control" sap:content-version="1">
+                <Key>
+                    <PropertyRef Name="Name"/>
+                </Key>
+                <Property Name="Name" Type="Edm.String" Nullable="false" MaxLength="30" sap:display-format="UpperCase" sap:label="Variable Name" sap:quickinfo="ABAP: Name of Variant Variable"/>
+                <Property Name="SendingPort" Type="Edm.String" MaxLength="255" sap:label="Field Value" sap:quickinfo="Selection Variants: Field Content (LOW/HIGH)"/>
+                <Property Name="SendingPartner" Type="Edm.String" MaxLength="255" sap:label="Field Value" sap:quickinfo="Selection Variants: Field Content (LOW/HIGH)"/>
             </EntityType>
             <EntityType Name="SAP__Currency" sap:content-version="1">
                 <Key>
@@ -183,9 +192,15 @@
                 <Property Name="Bstdk" Type="Edm.DateTime" Precision="0" sap:label="Customer Ref. Date"/>
                 <Property Name="Bstnk" Type="Edm.String" MaxLength="20" sap:label="Customer Reference"/>
                 <Property Name="Charg" Type="Edm.String" MaxLength="10" sap:label="Batch"/>
+                <Property Name="CreatedAt" Type="Edm.DateTimeOffset" Precision="7" sap:label="Created On"/>
+                <Property Name="CreatedBy" Type="Edm.String" MaxLength="12" sap:label="Created By"/>
+                <Property Name="EdiHdrText" Type="Edm.String" MaxLength="132" sap:label="Text Line"/>
                 <Property Name="KunnrAg" Type="Edm.String" MaxLength="10" sap:label="Sold-to Party"/>
                 <Property Name="KunnrWe" Type="Edm.String" MaxLength="10" sap:label="Ship-to Party"/>
                 <Property Name="Kwmeng" Type="Edm.Decimal" Precision="15" Scale="3" sap:unit="Vrkme" sap:label="Order Quantity"/>
+                <Property Name="Land1" Type="Edm.String" MaxLength="3" sap:label="Country/Region Key"/>
+                <Property Name="LastChangedAt" Type="Edm.DateTimeOffset" Precision="7" sap:label="Changed On"/>
+                <Property Name="LastChangedBy" Type="Edm.String" MaxLength="12" sap:label="Changed By"/>
                 <Property Name="Matnr" Type="Edm.String" MaxLength="40" sap:label="Material"/>
                 <Property Name="Name1" Type="Edm.String" MaxLength="35" sap:label="Name"/>
                 <Property Name="Name2" Type="Edm.String" MaxLength="35" sap:label="Name 2"/>
@@ -200,6 +215,7 @@
                 <Property Name="StgGuid" Type="Edm.Guid" sap:label="UUID"/>
                 <Property Name="Stras" Type="Edm.String" MaxLength="35" sap:label="Street"/>
                 <Property Name="StrSuppl" Type="Edm.String" MaxLength="40" sap:label="Street 2"/>
+                <Property Name="Vbeln" Type="Edm.String" MaxLength="10" sap:label="Sales Document"/>
                 <Property Name="Vdatu" Type="Edm.DateTime" Precision="0" sap:label="Requested Deliv.Date"/>
                 <Property Name="Vkbur" Type="Edm.String" MaxLength="4" sap:label="Sales Office"/>
                 <Property Name="Vkorg" Type="Edm.String" MaxLength="4" sap:label="Sales Organization"/>
@@ -280,6 +296,7 @@
                 <EntitySet Name="SAP__SignatureSet" EntityType="cds_zsd_order_upload_srvdef.SAP__Signature" sap:creatable="false" sap:updatable="false" sap:deletable="false" sap:pageable="false" sap:addressable="false" sap:content-version="1"/>
                 <EntitySet Name="SAP__ValueHelpSet" EntityType="cds_zsd_order_upload_srvdef.SAP__ValueHelp" sap:content-version="1"/>
                 <EntitySet Name="OrdersUpload" EntityType="cds_zsd_order_upload_srvdef.OrdersUploadType" sap:content-version="1" sap:deletable-path="Delete_mc" sap:updatable-path="Update_mc"/>
+                <EntitySet Name="IdocControl" EntityType="cds_zsd_order_upload_srvdef.IdocControlType" sap:creatable="false" sap:updatable="false" sap:deletable="false" sap:content-version="1"/>
                 <EntitySet Name="SAP__Currencies" EntityType="cds_zsd_order_upload_srvdef.SAP__Currency" sap:content-version="1"/>
                 <EntitySet Name="SAP__UnitsOfMeasure" EntityType="cds_zsd_order_upload_srvdef.SAP__UnitOfMeasure" sap:content-version="1"/>
                 <EntitySet Name="SAP__MyDocumentDescriptions" EntityType="cds_zsd_order_upload_srvdef.SAP__DocumentDescription" sap:content-version="1"/>
@@ -303,15 +320,42 @@
                     <End EntitySet="SAP__MyDocumentDescriptions" Role="FromRole_to_coverpage"/>
                     <End EntitySet="SAP__CoverPageSet" Role="ToRole_to_coverpage"/>
                 </AssociationSet>
+                <FunctionImport Name="delete_staging" ReturnType="Collection(cds_zsd_order_upload_srvdef.ZA_SD_ORDERS_UPLOAD_RESULTS)" m:HttpMethod="POST"/>
                 <FunctionImport Name="excel_upload" ReturnType="Collection(cds_zsd_order_upload_srvdef.ZA_SD_ORDERS_UPLOAD_RESULTS)" m:HttpMethod="POST">
-                    <Parameter Name="filecontent" Type="Edm.String" Mode="In" Nullable="true"/>
+                    <Parameter Name="rectype" Type="Edm.String" Mode="In" MaxLength="1" Nullable="true"/>
+                    <Parameter Name="RCVPOR" Type="Edm.String" Mode="In" MaxLength="10" Nullable="true" sap:label="Receiver port"/>
+                    <Parameter Name="RCVPRT" Type="Edm.String" Mode="In" MaxLength="2" Nullable="true" sap:label="Receiver Partn. Type"/>
+                    <Parameter Name="RCVPRN" Type="Edm.String" Mode="In" MaxLength="10" Nullable="true" sap:label="Receiver Partner No."/>
+                    <Parameter Name="SNDPOR" Type="Edm.String" Mode="In" MaxLength="10" Nullable="true" sap:label="Sender port"/>
+                    <Parameter Name="SNDPRT" Type="Edm.String" Mode="In" MaxLength="2" Nullable="true" sap:label="Sender partner type"/>
+                    <Parameter Name="SNDPRN" Type="Edm.String" Mode="In" MaxLength="10" Nullable="true" sap:label="Sender partner no."/>
+                    <Parameter Name="MESTYP" Type="Edm.String" Mode="In" MaxLength="30" Nullable="true" sap:label="Message Type"/>
+                    <Parameter Name="IDOCTP" Type="Edm.String" Mode="In" MaxLength="30" Nullable="true" sap:label="Basic type"/>
+                    <Parameter Name="filecontent" Type="Edm.String" Mode="In" Nullable="true" sap:label="File Content"/>
                 </FunctionImport>
-                <FunctionImport Name="process_staging" ReturnType="Collection(cds_zsd_order_upload_srvdef.ZA_SD_ORDERS_UPLOAD_RESULTS)" m:HttpMethod="POST" sap:action-for="cds_zsd_order_upload_srvdef.OrdersUploadType" sap:applicable-path="process_staging_ac">
-                    <Parameter Name="StgGuid" Type="Edm.Guid" Mode="In" sap:label="UUID"/>
+                <FunctionImport Name="process_staging" ReturnType="Collection(cds_zsd_order_upload_srvdef.ZA_SD_ORDERS_UPLOAD_RESULTS)" m:HttpMethod="POST">
+                    <Parameter Name="rectype" Type="Edm.String" Mode="In" MaxLength="1" Nullable="true"/>
+                    <Parameter Name="RCVPOR" Type="Edm.String" Mode="In" MaxLength="10" Nullable="true" sap:label="Receiver port"/>
+                    <Parameter Name="RCVPRT" Type="Edm.String" Mode="In" MaxLength="2" Nullable="true" sap:label="Receiver Partn. Type"/>
+                    <Parameter Name="RCVPRN" Type="Edm.String" Mode="In" MaxLength="10" Nullable="true" sap:label="Receiver Partner No."/>
+                    <Parameter Name="SNDPOR" Type="Edm.String" Mode="In" MaxLength="10" Nullable="true" sap:label="Sender port"/>
+                    <Parameter Name="SNDPRT" Type="Edm.String" Mode="In" MaxLength="2" Nullable="true" sap:label="Sender partner type"/>
+                    <Parameter Name="SNDPRN" Type="Edm.String" Mode="In" MaxLength="10" Nullable="true" sap:label="Sender partner no."/>
+                    <Parameter Name="MESTYP" Type="Edm.String" Mode="In" MaxLength="30" Nullable="true" sap:label="Message Type"/>
+                    <Parameter Name="IDOCTP" Type="Edm.String" Mode="In" MaxLength="30" Nullable="true" sap:label="Basic type"/>
+                    <Parameter Name="filecontent" Type="Edm.String" Mode="In" Nullable="true" sap:label="File Content"/>
                 </FunctionImport>
-                <FunctionImport Name="staging_data" ReturnType="Collection(cds_zsd_order_upload_srvdef.ZA_SD_ORDERS_UPLOAD_RESULTS)" m:HttpMethod="POST" sap:action-for="cds_zsd_order_upload_srvdef.OrdersUploadType" sap:applicable-path="staging_data_ac">
-                    <Parameter Name="StgGuid" Type="Edm.Guid" Mode="In" sap:label="UUID"/>
-                    <Parameter Name="filecontent" Type="Edm.String" Mode="In" Nullable="true"/>
+                <FunctionImport Name="staging_data" ReturnType="Collection(cds_zsd_order_upload_srvdef.ZA_SD_ORDERS_UPLOAD_RESULTS)" m:HttpMethod="POST">
+                    <Parameter Name="rectype" Type="Edm.String" Mode="In" MaxLength="1" Nullable="true"/>
+                    <Parameter Name="RCVPOR" Type="Edm.String" Mode="In" MaxLength="10" Nullable="true" sap:label="Receiver port"/>
+                    <Parameter Name="RCVPRT" Type="Edm.String" Mode="In" MaxLength="2" Nullable="true" sap:label="Receiver Partn. Type"/>
+                    <Parameter Name="RCVPRN" Type="Edm.String" Mode="In" MaxLength="10" Nullable="true" sap:label="Receiver Partner No."/>
+                    <Parameter Name="SNDPOR" Type="Edm.String" Mode="In" MaxLength="10" Nullable="true" sap:label="Sender port"/>
+                    <Parameter Name="SNDPRT" Type="Edm.String" Mode="In" MaxLength="2" Nullable="true" sap:label="Sender partner type"/>
+                    <Parameter Name="SNDPRN" Type="Edm.String" Mode="In" MaxLength="10" Nullable="true" sap:label="Sender partner no."/>
+                    <Parameter Name="MESTYP" Type="Edm.String" Mode="In" MaxLength="30" Nullable="true" sap:label="Message Type"/>
+                    <Parameter Name="IDOCTP" Type="Edm.String" Mode="In" MaxLength="30" Nullable="true" sap:label="Basic type"/>
+                    <Parameter Name="filecontent" Type="Edm.String" Mode="In" Nullable="true" sap:label="File Content"/>
                 </FunctionImport>
             </EntityContainer>
             <Annotations Target="cds_zsd_order_upload_srvdef.cds_zsd_order_upload_srvdef_Entities" xmlns="http://docs.oasis-open.org/odata/ns/edm">
@@ -331,8 +375,6 @@
                     <Record>
                         <PropertyValue Property="NonFilterableProperties">
                             <Collection>
-                                <PropertyPath>process_staging_ac</PropertyPath>
-                                <PropertyPath>staging_data_ac</PropertyPath>
                                 <PropertyPath>Delete_mc</PropertyPath>
                                 <PropertyPath>Update_mc</PropertyPath>
                             </Collection>
@@ -346,8 +388,6 @@
                     <Record>
                         <PropertyValue Property="NonSortableProperties">
                             <Collection>
-                                <PropertyPath>process_staging_ac</PropertyPath>
-                                <PropertyPath>staging_data_ac</PropertyPath>
                                 <PropertyPath>Delete_mc</PropertyPath>
                                 <PropertyPath>Update_mc</PropertyPath>
                             </Collection>

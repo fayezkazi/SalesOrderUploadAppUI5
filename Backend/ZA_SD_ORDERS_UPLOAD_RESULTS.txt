@@ -20,8 +20,10 @@ define abstract entity ZA_SD_ORDERS_UPLOAD_RESULTS
       StrSuppl      : ad_strspp1;
       Ort01         : ort01_gp;
       Regio         : regio;
+      Land1         : land1;
       Pstlz         : pstlz;
       SmtpAddr      : ad_smtpadr;
+      EdiHdrText    : tdline;
       Posnr         : posnr_va;
       Matnr         : matnr;
       @Semantics.quantity.unitOfMeasure : 'vrkme'
@@ -33,6 +35,7 @@ define abstract entity ZA_SD_ORDERS_UPLOAD_RESULTS
       Status        : abap.char(1);
       @EndUserText.label : 'Status Message'
       StatusMsg     : abap.char(255);
+      Vbeln         : vbeln_va;
       CreatedAt     : abp_creation_tstmpl;
       CreatedBy     : abp_creation_user;
       LastChangedAt : abp_lastchange_tstmpl;

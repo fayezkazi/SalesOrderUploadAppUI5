@@ -2,8 +2,20 @@
 define root abstract entity ZA_SD_ORDERS_UPLOAD_ACTION
 {
 
-  rectype : abap.char( 1 );
-    @EndUserText.label: 'File Content'
+  rectype     : abap.char( 1 );
+
+  RCVPOR      : edi_rcvpor;
+  RCVPRT      : edi_rcvprt;
+  RCVPRN      : edi_rcvprn;
+  SNDPOR      : edi_sndpor;
+  SNDPRT      : edi_sndprt;
+  SNDPRN      : edi_sndprn;
+  MESTYP      : edi_mestyp;
+  IDOCTP      : edi_idoctp;
+
+  PROCESSMODE : abap.char( 4 );
+
+  @EndUserText.label: 'File Content'
   filecontent : abap.string;
 
 }

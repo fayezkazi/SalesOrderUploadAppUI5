@@ -16,7 +16,7 @@ etag master LastChangedAt
 
   static action staging_data parameter ZA_SD_ORDERS_UPLOAD_ACTION result [0..*] ZA_SD_ORDERS_UPLOAD_RESULTS;
 
-  static action process_staging result [0..*] ZA_SD_ORDERS_UPLOAD_RESULTS;
+  static action process_staging parameter ZA_SD_ORDERS_UPLOAD_ACTION result [0..*] ZA_SD_ORDERS_UPLOAD_RESULTS;
 
   static action delete_staging result [0..*] ZA_SD_ORDERS_UPLOAD_RESULTS;
 
@@ -43,8 +43,8 @@ etag master LastChangedAt
 
   determination updateAdminData on save { field Auart, Vkorg, Vtweg, Spart, Vkbur,
   KunnrAg, KunnrWe, Augru, Bstnk, Bstdk, Vdatu, Name1, Name2, Stras,
-  StrSuppl, Ort01, Regio, Pstlz, SmtpAddr, Posnr, Matnr, Kwmeng,
-  Vrkme, Charg, Werks, Status, StatusMsg; }
+  StrSuppl, Ort01, Regio, Land1, Pstlz, SmtpAddr, EdiHdrText, Posnr, Matnr, Kwmeng,
+  Vrkme, Charg, Werks, Status, StatusMsg, Vbeln; }
 
   // ── Field mapping : CDS element name → database table column ──────────────
   mapping for zsd_stg_orders corresponding
@@ -67,8 +67,10 @@ etag master LastChangedAt
     StrSuppl = str_suppl;
     Ort01 = ort01;
     Regio = regio;
+    Land1 = land1;
     Pstlz = pstlz;
     SmtpAddr = smtp_addr;
+    EdiHdrText = edi_hdr_text;
     Posnr = posnr;
     Matnr = matnr;
     Kwmeng = kwmeng;
@@ -77,6 +79,7 @@ etag master LastChangedAt
     Werks = werks;
     Status = status;
     StatusMsg = status_msg;
+    Vbeln = vbeln;
     CreatedAt = created_at;
     CreatedBy = created_by;
     LastChangedAt = last_changed_at;

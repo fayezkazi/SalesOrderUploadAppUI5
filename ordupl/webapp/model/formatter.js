@@ -13,6 +13,7 @@ sap.ui.define([], function () {
                 case "S": return "Success";
                 case "N": return "None";
                 case "M": return "Warning";
+                case "I": return "In-Progress";
                 default:  return "None";
             }
         },
@@ -27,6 +28,7 @@ sap.ui.define([], function () {
                 case "S": return "sap-icon://sys-enter-2";
                 case "N": return "sap-icon://pending";
                 case "M": return "sap-icon://edit";
+                case "I": return "sap-icon://in-progress";
                 default:  return "";
             }
         },

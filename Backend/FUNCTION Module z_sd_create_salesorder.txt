@@ -1,39 +1,588 @@
 FUNCTION z_sd_create_salesorder
   IMPORTING
+    VALUE(i_mode) TYPE char4 OPTIONAL
+    VALUE(i_idoc_cntrl) TYPE edidc OPTIONAL
     VALUE(i_header) TYPE bapisdhd1
   EXPORTING
     VALUE(e_vbeln) TYPE vbeln_va
   TABLES
-    t_items LIKE bapisditm
-    t_partners LIKE bapiparnr
-    t_schedules LIKE bapischdl
-    t_return LIKE bapiret2.
+    t_items LIKE bapisditm OPTIONAL
+    t_partners LIKE bapiparnr OPTIONAL
+    t_schedules LIKE bapischdl OPTIONAL
+    t_partneraddress LIKE bapiaddr1 OPTIONAL
+    t_order_text LIKE bapisdtext OPTIONAL
+    t_return LIKE bapiret2 OPTIONAL.
 
 
 
+  DATA: ls_edidc  TYPE edidc,
+        lt_edidd  TYPE TABLE OF edidd,
+        ls_edidd  TYPE edidd,
+        lv_logsys TYPE logsystem,
+        lv_docnum TYPE edidc-docnum.
 
-  CALL FUNCTION 'BAPI_SALESORDER_CREATEFROMDAT2'
-    EXPORTING
-      order_header_in    = i_header
-    IMPORTING
-      salesdocument      = e_vbeln
-    TABLES
-      order_items_in     = t_items
-      order_partners     = t_partners
-      order_schedules_in = t_schedules
-      return             = t_return.
+  DATA: ls_e1edk01 TYPE e1edk01,
+        ls_e1edk02 TYPE e1edk02,
+        ls_e1edk03 TYPE e1edk03,
+        ls_e1edk14 TYPE e1edk14,
+        ls_e1edka1 TYPE e1edka1,
+        ls_e1edkt1 TYPE e1edkt1,
+        ls_e1edkt2 TYPE e1edkt2,
+        ls_e1edp01 TYPE e1edp01,
+        ls_e1edp19 TYPE e1edp19.
 
-  " Commit/rollback happens here inside the async work process - safe!
-  IF e_vbeln IS NOT INITIAL AND
-     NOT line_exists( t_return[ type = 'E' ] ) AND
-     NOT line_exists( t_return[ type = 'A' ] ).
-    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
-      EXPORTING
-        wait = abap_true.
-  ELSE.
-    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
-  ENDIF.
+  TRY.
+      IF i_mode = 'BAPI'.
+        CALL FUNCTION 'BAPI_SALESORDER_CREATEFROMDAT2'
+          EXPORTING
+            order_header_in    = i_header
+          IMPORTING
+            salesdocument      = e_vbeln
+          TABLES
+            order_items_in     = t_items
+            order_partners     = t_partners
+            order_schedules_in = t_schedules
+            partneraddresses   = t_partneraddress
+            order_text         = t_order_text
+            return             = t_return
+          EXCEPTIONS
+            system_failure     = 1
+            OTHERS             = 2.
+
+        IF sy-subrc <> 0.
+          APPEND VALUE #(
+              type    = 'E'
+              message = 'BAPI_SALESORDER_CREATEFROMDAT2 failed'
+          ) TO t_return.
+          CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+        ENDIF.
+
+        IF e_vbeln IS NOT INITIAL AND
+           NOT line_exists( t_return[ type = 'E' ] ) AND
+           NOT line_exists( t_return[ type = 'A' ] ).
+          CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+            EXPORTING
+              wait = abap_true.
+        ELSE.
+          CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+        ENDIF.
+
+      ELSEIF i_mode = 'IDOC'.
+**&&** ========================================================== **&&**
+        "Get the Logical System
+        CALL FUNCTION 'OWN_LOGICAL_SYSTEM_GET'
+          IMPORTING
+            own_logical_system             = lv_logsys
+          EXCEPTIONS
+            own_logical_system_not_defined = 1
+            OTHERS                         = 2.
+
+        IF sy-subrc <> 0.
+          APPEND VALUE #(
+              type    = 'E'
+              message = 'Logical system not configured - check transaction BD54/SALE'
+          ) TO t_return.
+          RETURN.
+        ENDIF.
+
+        "Fill Up the Segments
+        " ── IDoc Control Record ───────────────────────────────────────────────────
+        ls_edidc-direct  = '2'.          " Direction: Inbound
+        ls_edidc-idoctp  = i_idoc_cntrl-idoctp.   " IDoc type
+        ls_edidc-mestyp  = i_idoc_cntrl-mestyp.     " Message type
+        ls_edidc-docrel  = sy-saprl.     " SAP release
+        ls_edidc-rcvprt  = i_idoc_cntrl-rcvprt.         " Receiver port type: Logical System
+        ls_edidc-rcvpor  = i_idoc_cntrl-rcvpor.
+        ls_edidc-rcvprn  = lv_logsys.    " Receiver = own system
+        ls_edidc-sndprt  = i_idoc_cntrl-sndprt.         " Sender port type:   Logical System
+        ls_edidc-sndpor  = i_idoc_cntrl-sndpor.
+        ls_edidc-sndprn  = i_idoc_cntrl-sndprn.    " Sender  = own system (self-IDoc)
+
+        " ── E1EDK01: Document header general data ────────────────────────────────
+        CLEAR ls_e1edk01.
+        ls_e1edk01-augru = i_header-ord_reason.      " Order Reason
+        CLEAR ls_edidd.
+        ls_edidd-segnam = 'E1EDK01'.
+        ls_edidd-sdata  = ls_e1edk01.
+        APPEND ls_edidd TO lt_edidd.
+
+        " ── E1EDK14: Order Type ---
+        " QUALF 012 = Order Type
+        CLEAR ls_e1edk14.
+        ls_e1edk14-qualf = '012'.
+        ls_e1edk14-orgid = i_header-doc_type.
+        CLEAR ls_edidd.
+        ls_edidd-segnam = 'E1EDK14'.
+        ls_edidd-sdata  = ls_e1edk14.
+        APPEND ls_edidd TO lt_edidd.
+
+        " ── E1EDK14: Org data (one segment per qualifier) ────────────────────────
+        " QUALF 008 = Sales Organisation
+        CLEAR ls_e1edk14.
+        ls_e1edk14-qualf = '008'.
+        ls_e1edk14-orgid = i_header-sales_org.
+        CLEAR ls_edidd.
+        ls_edidd-segnam = 'E1EDK14'.
+        ls_edidd-sdata  = ls_e1edk14.
+        APPEND ls_edidd TO lt_edidd.
+
+        " QUALF 007 = Distribution Channel
+        CLEAR ls_e1edk14.
+        ls_e1edk14-qualf = '007'.
+        ls_e1edk14-orgid = i_header-distr_chan.
+        CLEAR ls_edidd.
+        ls_edidd-segnam = 'E1EDK14'.
+        ls_edidd-sdata  = ls_e1edk14.
+        APPEND ls_edidd TO lt_edidd.
+
+        " QUALF 006 = Division
+        CLEAR ls_e1edk14.
+        ls_e1edk14-qualf = '006'.
+        ls_e1edk14-orgid = i_header-division.
+        CLEAR ls_edidd.
+        ls_edidd-segnam = 'E1EDK14'.
+        ls_edidd-sdata  = ls_e1edk14.
+        APPEND ls_edidd TO lt_edidd.
+
+        " QUALF 016 = Sales Office
+        IF i_header-sales_off IS NOT INITIAL.
+          CLEAR ls_e1edk14.
+          ls_e1edk14-qualf = '016'.
+          ls_e1edk14-orgid = i_header-sales_off.
+          CLEAR ls_edidd.
+          ls_edidd-segnam = 'E1EDK14'.
+          ls_edidd-sdata  = ls_e1edk14.
+          APPEND ls_edidd TO lt_edidd.
+        ENDIF.
+
+        " ── E1EDK03: Dates ────────────────────────────────────────────────────────
+        " IDDAT 022 = Customer PO date (BSTDK)
+        IF i_header-purch_date IS NOT INITIAL.
+          CLEAR ls_e1edk03.
+          ls_e1edk03-iddat = '022'.
+          ls_e1edk03-datum = i_header-purch_date.
+          CLEAR ls_edidd.
+          ls_edidd-segnam = 'E1EDK03'.
+          ls_edidd-sdata  = ls_e1edk03.
+          APPEND ls_edidd TO lt_edidd.
+        ENDIF.
+
+        " IDDAT 012 = Requested delivery date (VDATU)
+        IF i_header-req_date_h IS NOT INITIAL.
+          CLEAR ls_e1edk03.
+          ls_e1edk03-iddat = '002'.
+          ls_e1edk03-datum = i_header-req_date_h.
+          CLEAR ls_edidd.
+          ls_edidd-segnam = 'E1EDK03'.
+          ls_edidd-sdata  = ls_e1edk03.
+          APPEND ls_edidd TO lt_edidd.
+        ENDIF.
+
+        " ── E1EDKA1: Partners ────────────────────────────────────────────────────
+        LOOP AT t_partners INTO DATA(ls_partner).
+          CLEAR ls_e1edka1.
+          ls_e1edka1-parvw = ls_partner-partn_role.   " AG = sold-to, WE = ship-to
+          ls_e1edka1-partn = ls_partner-partn_numb.
+
+          IF ls_partner-partn_numb = 'WE'.
+            DATA(ls_partner_address) = VALUE #( t_partneraddress[ addr_no = ls_partner-addr_link ] OPTIONAL ).
+            IF ls_partner_address IS NOT INITIAL.
+              ls_e1edka1-name1 = ls_partner_address-name.
+              ls_e1edka1-name2 = ls_partner_address-name_2.
+              ls_e1edka1-stras = ls_partner_address-street.
+              ls_e1edka1-ort01 = ls_partner_address-city.
+              ls_e1edka1-regio = ls_partner_address-region.
+              ls_e1edka1-pstlz = ls_partner_address-postl_cod1.
+              ls_e1edka1-land1 = ls_partner_address-country.
+            ENDIF.
+          ENDIF.
+          CLEAR ls_edidd.
+          ls_edidd-segnam = 'E1EDKA1'.
+          ls_edidd-sdata  = ls_e1edka1.
+          APPEND ls_edidd TO lt_edidd.
+        ENDLOOP.
+
+        " ── E1EDK02: Customer PO Number
+        CLEAR ls_e1edk02.
+        ls_e1edk02-qualf = '001'.
+        ls_e1edk02-belnr = i_header-purch_no_c.      " Customer PO number
+        ls_e1edk02-datum = i_header-purch_date.      " PO Date
+        CLEAR ls_edidd.
+        ls_edidd-segnam = 'E1EDK02'.
+        ls_edidd-sdata  = ls_e1edk02.
+        APPEND ls_edidd TO lt_edidd.
+
+        "-----E1EDKT1 : E1EDKT2 Header Text ---------"
+        LOOP AT t_order_text INTO DATA(ls_header_text).
+          CLEAR: ls_e1edkt1.
+          CLEAR ls_e1edkt1.
+          ls_e1edkt1-tdobject = 'VBBK'.
+          ls_e1edkt1-tdid     = ls_header_text-text_id.
+          ls_e1edkt1-tsspras  = ls_header_text-langu.
+          CLEAR ls_edidd.
+          ls_edidd-segnam = 'E1EDKT1'.
+          ls_edidd-sdata  = ls_e1edkt1.
+          APPEND ls_edidd TO lt_edidd.
+
+          CLEAR ls_e1edkt2.
+          ls_e1edkt2-tdformat = '*'.
+          ls_e1edkt2-tdline   = ls_header_text-text_line.
+          CLEAR ls_edidd.
+          ls_edidd-segnam = 'E1EDKT2'.
+          ls_edidd-sdata  = ls_e1edkt2.
+          APPEND ls_edidd TO lt_edidd.
+        ENDLOOP.
+
+        " ── Item segments (E1EDP01 + E1EDP19 per line item) ─────────────────────
+        LOOP AT t_items INTO DATA(ls_item).
+          " E1EDP01: Item data
+          CLEAR ls_e1edp01.
+          ls_e1edp01-posex = ls_item-itm_number.   " Item number
+          ls_e1edp01-menge = ls_item-target_qty.   " Quantity
+          ls_e1edp01-menee = ls_item-sales_unit.   " Unit
+          ls_e1edp01-werks = ls_item-plant.        " Plant
+          "ls_e1edp01- = ls_item-batch.        " Batch      (CHARG)
+          CLEAR ls_edidd.
+          ls_edidd-segnam = 'E1EDP01'.
+          ls_edidd-sdata  = ls_e1edp01.
+          APPEND ls_edidd TO lt_edidd.
+
+          " E1EDP19: Material number identification (QUALF 002 = SAP material number)
+          CLEAR ls_e1edp19.
+          ls_e1edp19-qualf = '002'.
+          ls_e1edp19-idtnr = ls_item-material.
+          CLEAR ls_edidd.
+          ls_edidd-segnam = 'E1EDP19'.
+          ls_edidd-sdata  = ls_e1edp19.
+          APPEND ls_edidd TO lt_edidd.
+        ENDLOOP.
+        DATA: process_data  TYPE tede2.
+        CALL FUNCTION 'IDOC_INBOUND_WRITE_TO_DB'
+*   EXPORTING
+*     PI_STATUS_MESSAGE             =
+*     PI_DO_HANDLE_ERROR            = 'X'
+*     PI_NO_DEQUEUE                 = ' '
+*     PI_RETURN_DATA_FLAG           = 'X'
+*     PI_RFC_MULTI_CP               = '    '
+          IMPORTING
+            pe_idoc_number          = lv_docnum
+*           PE_STATE_OF_PROCESSING  =
+            pe_inbound_process_data = process_data
+          TABLES
+            t_data_records          = lt_edidd
+*           T_LINKED_OBJECTS        =
+          CHANGING
+            pc_control_record       = ls_edidc
+          EXCEPTIONS
+            idoc_not_saved          = 1
+            OTHERS                  = 2.
+
+        IF sy-subrc = 0.
+          " IDoc number returned as reference in the message (VBELN not yet available)
+          APPEND VALUE #(
+              type    = 'S'
+              message = |IDoc { lv_docnum } created in READY status (64)|
+          ) TO t_return.
+          " Store IDoc number in e_vbeln (truncated) so caller can log it
+          e_vbeln = lv_docnum(10).
+        ELSE.
+          APPEND VALUE #(
+              type    = 'E'
+              message = |IDOC_INBOUND_WRITE_TO_DB failed|
+          ) TO t_return.
+        ENDIF.
+
+**&&** ========================================================== **&&**
+      ELSEIF i_mode = 'API'.
+        "Call API API_SALES_ORDER_SRV to create Sales Order
+
+        TYPES: BEGIN OF ty_deep_so_partner.
+                 INCLUDE TYPE a_salesorderheaderpartner.
+        TYPES:   to_address TYPE TABLE OF a_salesorderpartneraddress WITH DEFAULT KEY.
+        TYPES: END OF ty_deep_so_partner.
+
+        TYPES: BEGIN OF ty_deep_so.
+                 INCLUDE TYPE a_salesorder.
+        TYPES:   to_text TYPE TABLE OF a_salesordertext WITH DEFAULT KEY.                   " nav: to_Text
+        TYPES: to_partner TYPE TABLE OF ty_deep_so_partner  WITH DEFAULT KEY,
+               to_item    TYPE TABLE OF a_salesorderitem
+                                    WITH DEFAULT KEY.                   " nav: to_Item
+        TYPES: END OF ty_deep_so.
 
 
+        DATA: lo_client_proxy   TYPE REF TO /iwbep/if_cp_client_proxy,
+              lo_create_req     TYPE REF TO /iwbep/if_cp_request_create,
+              lo_create_resp    TYPE REF TO /iwbep/if_cp_response_create,
+              ls_api_so_header  TYPE a_salesorder,            " generated type
+              ls_api_so_created TYPE a_salesorder,
+              lt_api_partners   TYPE TABLE OF a_salesorderheaderpartner,
+              lt_api_items      TYPE TABLE OF a_salesorderitem,
+              lt_api_bpaddress  TYPE TABLE OF a_salesorderpartneraddress,
+              lt_api_text       TYPE TABLE OF a_salesordertext,
+              ls_api_partner    TYPE a_salesorderheaderpartner,
+              ls_api_item       TYPE a_salesorderitem,
+              ls_api_bpaddress  TYPE a_salesorderpartneraddress,
+              ls_api_text       TYPE a_salesordertext,
+              lv_days           TYPE i,
+              lv_ms             TYPE int8,
+              lv_qty_str        TYPE string.
+
+        DATA: lt_api_deep_partners TYPE TABLE OF ty_deep_so_partner,
+              ls_deep_partner      TYPE ty_deep_so_partner.
+
+        DATA: ls_deep_so TYPE ty_deep_so.
+
+        DATA ls_addr_key TYPE a_salesorderpartneraddress.
+
+        " ── Build header ─────────────────────────────────────────────────────
+        CLEAR ls_api_so_header.
+
+        " sold to party is MANDATORY for API_SALES_ORDER_SRV
+        READ TABLE t_partners INTO DATA(ls_sold_to_part) WITH KEY partn_role = 'AG'.
+        IF sy-subrc = 0.
+          ls_api_so_header-soldtoparty = ls_sold_to_part-partn_numb.
+        ELSE.
+          APPEND VALUE #( type = 'E' message = 'No AG (Sold-To) partner supplied' ) TO t_return.
+          RETURN.
+        ENDIF.
+
+        ls_api_so_header-salesordertype       = i_header-doc_type.
+        ls_api_so_header-salesorganization    = i_header-sales_org.
+        ls_api_so_header-distributionchannel  = i_header-distr_chan.
+        ls_api_so_header-organizationdivision = i_header-division.
+        ls_api_so_header-salesoffice          = i_header-sales_off.
+        ls_api_so_header-purchaseorderbycustomer = i_header-purch_no_c.
+        ls_api_so_header-sddocumentreason     = i_header-ord_reason.
+
+        DATA: lv_timestamp TYPE timestamp.
+        " Convert ABAP DATS → ABAP TIMESTAMP (proxy handles Edm.DateTime)
+        IF i_header-purch_date IS NOT INITIAL.
+          CONVERT DATE i_header-purch_date TIME '000000'
+            INTO TIME STAMP lv_timestamp
+            TIME ZONE 'UTC'.
+          ls_api_so_header-customerpurchaseorderdate = i_header-purch_date. "lv_timestamp.
+        ENDIF.
+        IF i_header-req_date_h IS NOT INITIAL.
+          CONVERT DATE i_header-req_date_h TIME '000000'
+            INTO TIME STAMP lv_timestamp
+            TIME ZONE 'UTC'.
+          ls_api_so_header-requesteddeliverydate = i_header-req_date_h. "lv_timestamp.
+        ENDIF.
+
+        " ── Build partners ───────────────────────────────────────────────────
+        LOOP AT t_partners INTO DATA(ls_api_part).
+          CLEAR ls_deep_partner.
+          ls_deep_partner-partnerfunction = ls_api_part-partn_role.
+          ls_deep_partner-customer        = ls_api_part-partn_numb.
+
+          " Nest address INSIDE the WE partner — not at header level
+          IF ls_api_part-partn_role = 'WE'.
+            DATA(ls_api_partner_address) = VALUE #(
+                t_partneraddress[ addr_no = ls_api_part-addr_link ] OPTIONAL ).
+            IF ls_api_partner_address IS NOT INITIAL.
+              CLEAR ls_api_bpaddress.
+              ls_api_bpaddress-partnerfunction   = ls_api_part-partn_role.
+              ls_api_bpaddress-organizationname1 = ls_api_partner_address-name.
+              ls_api_bpaddress-organizationname2 = ls_api_partner_address-name_2.
+              ls_api_bpaddress-streetname        = ls_api_partner_address-street.
+              ls_api_bpaddress-cityname          = ls_api_partner_address-city.
+              ls_api_bpaddress-region            = ls_api_partner_address-region.
+              ls_api_bpaddress-postalcode        = ls_api_partner_address-postl_cod1.
+              ls_api_bpaddress-country           = ls_api_partner_address-country.
+              APPEND ls_api_bpaddress TO ls_deep_partner-to_address.  " ← nested here
+            ENDIF.
+          ENDIF.
+
+          APPEND ls_deep_partner TO lt_api_deep_partners.
+        ENDLOOP.
+
+        "----Build Header Text ----
+        LOOP AT t_order_text INTO DATA(ls_api_text_line).
+          CLEAR ls_api_text.
+          ls_api_text-longtextid     = ls_api_text_line-text_id.
+          ls_api_text-language  = ls_api_text_line-langu.
+          ls_api_text-longtext   = ls_api_text_line-text_line.
+          APPEND ls_api_text TO lt_api_text.
+        ENDLOOP.
+
+        " ── Build items ──────────────────────────────────────────────────────
+        LOOP AT t_items INTO DATA(ls_api_item1).
+          CLEAR ls_api_item.
+          ls_api_item-salesorderitem         = ls_api_item1-itm_number.
+          ls_api_item-material               = ls_api_item1-material.
+          ls_api_item-requestedquantity      = ls_api_item1-target_qty.
+          ls_api_item-requestedquantityunit  = ls_api_item1-sales_unit.
+          ls_api_item-originalplant          = ls_api_item1-plant.
+          ls_api_item-batch                  = ls_api_item1-batch.
+          APPEND ls_api_item TO lt_api_items.
+        ENDLOOP.
+
+        " ── Assemble deep structure (header + nav properties) ────────────────
+        MOVE-CORRESPONDING ls_api_so_header TO ls_deep_so.
+        ls_deep_so-to_text    = lt_api_text.
+        ls_deep_so-to_partner = lt_api_deep_partners.
+        ls_deep_so-to_item    = lt_api_items.
+
+        " ── Create Local Client Proxy (in-process, no HTTP) ─────────────────
+        TRY.
+            "DATA(lo_factory) = NEW /iwbep/cl_cp_client_proxy_fact( ).
+            lo_client_proxy  = /iwbep/cl_cp_client_proxy_fact=>create_v2_local_proxy(
+                VALUE #(
+                    service_id      = 'API_SALES_ORDER_SRV'
+                    service_version = '0001' ) ).
+
+          CATCH /iwbep/cx_cp_remote
+                /iwbep/cx_gateway
+                cx_web_http_client_error
+                cx_root        INTO DATA(lx_cp).
+
+            APPEND VALUE #(
+                type    = 'E'
+                message = |Client Proxy init failed: { COND #(
+                            WHEN lx_cp IS BOUND THEN lx_cp->get_text( ) ) }|
+            ) TO t_return.
+            RETURN.
+        ENDTRY.
+
+        " ── Set deep entity (header + nav properties) ────────────────────────
+        " The generated proxy exposes navigation properties as separate set calls
+        " or via the deep-entity approach depending on ADT version.
+        " Pattern below uses the deep-entity / expand approach:
+        TRY.
+            DATA(lo_entity_res) = lo_client_proxy->create_resource_for_entity_set(
+                                      'A_SalesOrder' ).
+            lo_create_req = lo_entity_res->create_request_for_create( ).
+
+            " Pass deep structure – nav property tables are included in the POST body
+            lo_create_req->set_business_data( is_business_data = ls_deep_so ).
+
+            " ── Execute ────────────────────────────────────────────────────
+            lo_create_resp = lo_create_req->execute( ).
+            lo_create_resp->get_business_data( IMPORTING es_business_data = ls_api_so_created ).
+
+            e_vbeln = ls_api_so_created-salesorder.
+            IF e_vbeln IS INITIAL.
+              CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+              APPEND VALUE #(
+                  type    = 'E'
+                  message = |API_SALES_ORDER_SRV did not return a Sales Order number|
+              ) TO t_return.
+            ELSE.
+              CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+                EXPORTING
+                  wait = abap_true.
+
+
+              " ── V2 deep insert does NOT propagate 2nd-level nav properties.
+              " ── PATCH A_SalesOrderPartnerAddress separately after commit. ────────
+              LOOP AT lt_api_deep_partners INTO DATA(ls_part_w_addr).
+                CHECK ls_part_w_addr-partnerfunction = 'WE'.
+                CHECK lines( ls_part_w_addr-to_address ) > 0.
+
+                DATA(ls_we_patch) = ls_part_w_addr-to_address[ 1 ].
+
+                " PATCH requires explicit list of OData properties to update
+                DATA lt_patch_props TYPE /iwbep/if_cp_runtime_types=>ty_t_property_path.
+                lt_patch_props = VALUE #(
+                    ( |ORGANIZATIONNAME1| )
+                    ( |ORGANIZATIONNAME2| )
+                    ( |STREETNAME|        )
+                    ( |CITYNAME|          )
+                    ( |REGION|            )
+                    ( |POSTALCODE|        )
+                    ( |COUNTRY|           )
+                    ( |EMAILADDRESS| ) ).
+
+                TRY.
+
+
+                    DATA lo_patch_proxy TYPE REF TO /iwbep/if_cp_client_proxy.
+                    TRY.
+                        lo_patch_proxy = /iwbep/cl_cp_client_proxy_fact=>create_v2_local_proxy(
+                            VALUE #(
+                                service_id      = 'API_SALES_ORDER_SRV'
+                                service_version = '0001' ) ).
+                      CATCH /iwbep/cx_cp_remote /iwbep/cx_gateway cx_root INTO DATA(lx_patch_init).
+                        APPEND VALUE #( type = 'E'
+                                        message = |PATCH proxy init failed: { lx_patch_init->get_text( ) }| )
+                          TO t_return.
+                        RETURN.
+                    ENDTRY.
+
+
+                    DATA(lo_partner_address_res) = lo_patch_proxy->create_resource_for_entity_set(
+                              'A_SalesOrderPartnerAddress' ).
+
+                    CLEAR ls_addr_key.
+                    ls_addr_key-salesorder                = e_vbeln.
+                    ls_addr_key-partnerfunction           = 'WE'.
+                    ls_addr_key-addressrepresentationcode = space.
+
+                    DATA(lo_addr_res) =
+                        lo_partner_address_res->navigate_with_key( ls_addr_key ).
+
+
+                    DATA(lo_patch_req) = lo_addr_res->create_request_for_update(
+                        /iwbep/if_cp_request_update=>gcs_update_semantic-patch ).
+
+                    lo_patch_req->set_business_data( is_business_data = ls_we_patch it_provided_property = lt_patch_props ).
+                    lo_patch_req->execute( ).
+
+                    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+                      EXPORTING
+                        wait = abap_true.
+
+                  CATCH /iwbep/cx_cp_local_v2
+                        /iwbep/cx_cp_remote
+                        /iwbep/cx_gateway
+                        cx_web_http_client_error INTO DATA(lx_addr).
+
+                    DATA(lv_addr_msg) = lx_addr->get_text( ).
+                    DATA(lx_addr_inner) = lx_addr->previous.
+                    WHILE lx_addr_inner IS BOUND.
+                      lv_addr_msg = lv_addr_msg && | >> | && lx_addr_inner->get_text( ).
+                      lx_addr_inner = lx_addr_inner->previous.
+                    ENDWHILE.
+
+                    APPEND VALUE #(
+                        type    = 'W'
+                        message = |WE partner address PATCH failed: { lv_addr_msg }|
+                    ) TO t_return.
+                ENDTRY.
+              ENDLOOP.
+
+
+*              APPEND VALUE #(
+*                  type    = 'S'
+*                  message = |Sales Order { e_vbeln } created via API_SALES_ORDER_SRV (Client Proxy)|
+*              ) TO t_return.
+            ENDIF.
+
+          CATCH /iwbep/cx_cp_local_v2
+                /iwbep/cx_cp_remote
+                /iwbep/cx_gateway
+                cx_web_http_client_error     INTO DATA(lx_api).
+
+            DATA(lv_err) = lx_api->get_text( ).
+            DATA(lx_inner) = lx_api->previous.
+            WHILE lx_inner IS BOUND.
+              lv_err = lv_err && | >> | && lx_inner->get_text( ).
+              lx_inner = lx_inner->previous.
+            ENDWHILE.
+
+            APPEND VALUE #(
+                type    = 'E'
+                message = |API_SALES_ORDER_SRV Client Proxy error: { lv_err }|
+            ) TO t_return.
+            CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+        ENDTRY.
+
+
+      ENDIF.
+      "If there is any Runtime Error, skip that Record and continue the next record
+    CATCH cx_root INTO DATA(lcx_root).
+      t_return[] = VALUE #( ( type = 'E' message = lcx_root->get_text( ) ) ). "'Processing of Staged Record Failed' ) ).
+      RETURN.
+  ENDTRY.
 
 ENDFUNCTION.

@@ -7,15 +7,18 @@ CLASS lhc_zi_sd_stg_orders DEFINITION INHERITING FROM cl_abap_behavior_handler.
   PRIVATE SECTION.
 
     TYPES: BEGIN OF ty_task_result,
-             task    TYPE char32, "zsd_stg_orders-stg_guid,
+             task    TYPE char32,
              vbeln   TYPE vbeln_va,
              success TYPE abap_bool,
              message TYPE string,
            END OF ty_task_result.
 
     CLASS-DATA:
-      gv_tasks_done   TYPE i,
-      gt_task_results TYPE TABLE OF ty_task_result WITH DEFAULT KEY.
+      gv_tasks_done    TYPE i,
+      gv_active_thread TYPE i,
+      gv_send_jobs     TYPE i,
+      gv_receive_jobs  TYPE i,
+      gt_task_results  TYPE TABLE OF ty_task_result WITH DEFAULT KEY.
 
     METHODS get_instance_authorizations FOR INSTANCE AUTHORIZATION
       IMPORTING keys REQUEST requested_authorizations FOR orders RESULT result.
@@ -203,6 +206,7 @@ CLASS lhc_zi_sd_stg_orders IMPLEMENTATION.
         ) TO reported-orders.
       ENDIF.
 
+
     ENDLOOP.
   ENDMETHOD.
 
@@ -271,6 +275,9 @@ CLASS lhc_zi_sd_stg_orders IMPLEMENTATION.
     IF lt_rows IS INITIAL.
       RETURN.
     ENDIF.
+
+    "Sort the Table by PO Number and Item Number to ensure correct sequence of header and items
+    SORT lt_rows BY vbak_bstnk vbap_posnr.
 
     "── Build EML create table ───────────────────────────────────────────────
     DATA(lv_counter) = 1.
@@ -341,9 +348,9 @@ CLASS lhc_zi_sd_stg_orders IMPLEMENTATION.
         FOR ls_created IN lt_created
         ( %cid       = ls_key-%cid
           %param     = VALUE #( BASE CORRESPONDING #( ls_created )
-                                Status = COND #( WHEN ls_created-status IS INITIAL THEN 'N'
+                                status = COND #( WHEN ls_created-status IS INITIAL THEN 'N'
                                                  ELSE ls_created-status )
-                                StatusMsg = COND #( WHEN ls_created-statusmsg IS INITIAL THEN 'New'
+                                statusmsg = COND #( WHEN ls_created-statusmsg IS INITIAL THEN 'New'
                                                  ELSE ls_created-statusmsg )
                                                  ) ) ).
 
@@ -419,17 +426,67 @@ CLASS lhc_zi_sd_stg_orders IMPLEMENTATION.
 
   METHOD process_staging.
 
-    " ── Mapping: task name → stg_guid ────────────────────────────────────
+    " --- Mapping: task name = TASK_n + stg_guid ----------------------------"
     DATA: BEGIN OF ls_map,
             taskname TYPE char32,
             stg_guid TYPE zsd_stg_orders-stg_guid,
           END OF ls_map.
     DATA lt_map LIKE TABLE OF ls_map.
+    DATA lv_task_idx   TYPE i VALUE 0.
+
+    DATA lt_update     TYPE TABLE FOR UPDATE zi_sd_stg_orders\\orders.
+
+    DATA lv_timestamp  TYPE timestampl.
+
+    DATA: lv_batch_done TYPE i,
+          lv_max_tasks  TYPE i,
+          lv_task_error TYPE i.
+
+    DATA: lv_appsrv_som TYPE rzllitab-classname.
+
+    CONSTANTS: lc_max_tasks    TYPE rvari_vnam VALUE 'Z_SD_ORDUPL_MAX_TASKS',
+               lc_appsrv       TYPE rzllitab-classname VALUE '  390', "'parallel_som',
+               lc_max_parallel TYPE i VALUE 40.
+
+    DATA ls_addr      TYPE bapiaddr1.
+
+    DATA: lt_items          TYPE TABLE OF bapisditm,
+          lt_schedules      TYPE TABLE OF bapischdl,
+          lt_partners       TYPE TABLE OF bapiparnr,
+          lt_partneraddress TYPE TABLE OF bapiaddr1,
+          lt_order_text     TYPE TABLE OF bapisdtext,
+          ls_header         TYPE bapisdhd1.
+
+    DATA: ls_edidc TYPE edidc.
+
+    " Populate the IDOC control records
+    LOOP AT keys INTO DATA(ls_key).
+      ls_edidc-mestyp = ls_key-%param-mestyp.
+      ls_edidc-idoctp = ls_key-%param-idoctp.
+      ls_edidc-rcvprt = ls_key-%param-rcvprt.
+      ls_edidc-rcvpor = ls_key-%param-rcvpor.
+      ls_edidc-rcvprn = ls_key-%param-rcvprn.
+      ls_edidc-sndprt = ls_key-%param-sndprt.
+      ls_edidc-sndprn = ls_key-%param-sndprn.
+      ls_edidc-sndpor = ls_key-%param-sndpor.
+
+      DATA(lv_processmode) = ls_key-%param-processmode.
+    ENDLOOP.
+
+    SELECT low FROM tvarvc WHERE name = @lc_max_tasks AND type = 'P' INTO @DATA(lv_low) UP TO 1 ROWS.
+    ENDSELECT.
+    IF sy-subrc = 0.
+      lv_max_tasks = lv_low.
+    ELSE.
+      lv_max_tasks = lc_max_parallel.
+    ENDIF.
+
+    lv_appsrv_som = lc_appsrv.
 
     SELECT stg_guid, auart, vkorg, vtweg, spart, vkbur,
            kunnr_ag, kunnr_we, augru, bstnk, bstdk, vdatu,
-           name1, name2, stras, str_suppl, ort01, regio, pstlz,
-           smtp_addr, posnr, matnr, kwmeng, vrkme, charg, werks
+           name1, name2, stras, str_suppl, ort01, regio, land1, pstlz,
+           smtp_addr, edi_hdr_text, posnr, matnr, kwmeng, vrkme, charg, werks
       FROM zsd_stg_orders
       WHERE status IN ( 'N','E', 'M' ) AND
               created_by = @sy-uname
@@ -437,101 +494,205 @@ CLASS lhc_zi_sd_stg_orders IMPLEMENTATION.
 
     IF lt_new_orders IS INITIAL.
       RETURN.
+    ELSE.
+      SORT lt_new_orders BY bstnk posnr.
     ENDIF.
 
-    CLEAR: gv_tasks_done, gt_task_results.
+    CLEAR: gv_tasks_done, gt_task_results, gv_active_thread, gv_send_jobs, gv_receive_jobs.
 
-    DATA lt_update     TYPE TABLE FOR UPDATE zi_sd_stg_orders\\orders.
-    DATA lv_timestamp  TYPE timestampl.
-    DATA lv_batch_done TYPE i.                  " tasks fired in current batch
-    CONSTANTS lc_max_parallel TYPE i VALUE 5.  " ← max concurrent tasks
 
     GET TIME STAMP FIELD lv_timestamp.
 
-    LOOP AT lt_new_orders INTO DATA(ls_order).
+    LOOP AT lt_new_orders INTO DATA(ls_order)
+        GROUP BY ( bstnk = ls_order-bstnk )
+         ASSIGNING FIELD-SYMBOL(<bstnk_group>).
 
-      DATA(lv_tabix) = sy-tabix.
-      "DATA(lv_task)  = ls_order-stg_guid.      " unique task name per order
 
-      DATA(lv_task) = |TASK_{ sy-tabix }|.  " prefix to ensure it fits char10
-      APPEND VALUE #( taskname = lv_task  stg_guid = ls_order-stg_guid ) TO lt_map.
-      " ── Header ──────────────────────────────────────────────────────────
-      DATA(ls_header) = VALUE bapisdhd1(
-          doc_type   = ls_order-auart
-          sales_org  = ls_order-vkorg
-          distr_chan  = ls_order-vtweg
-          division   = ls_order-spart
-          sales_off  = ls_order-vkbur
-          purch_no_c = ls_order-bstnk
-          purch_date = ls_order-bstdk
-          req_date_h = ls_order-vdatu
-      ).
+      DATA(lv_header_set) = abap_false.
+      lv_task_idx += 1.
+      DATA(lv_task) = |TASK_{ lv_task_idx }|.
 
-      " ── Partners ────────────────────────────────────────────────────────
-      DATA lt_partners TYPE TABLE OF bapiparnr.
-      CLEAR lt_partners.
-      IF ls_order-kunnr_ag IS NOT INITIAL.
-        APPEND VALUE #( partn_role = 'AG' partn_numb = |{ ls_order-kunnr_ag ALPHA = IN }| ) TO lt_partners.
-      ENDIF.
-      IF ls_order-kunnr_we IS NOT INITIAL.
-        APPEND VALUE #( partn_role = 'WE' partn_numb = |{ ls_order-kunnr_we ALPHA = IN }| ) TO lt_partners.
-      ENDIF.
 
-      " ── Item ────────────────────────────────────────────────────────────
-      DATA lt_items TYPE TABLE OF bapisditm.
-      CLEAR lt_items.
-      APPEND VALUE #(
-          itm_number = ls_order-posnr
-          material   = ls_order-matnr
-          target_qty = ls_order-kwmeng
-          sales_unit = ls_order-vrkme
-          batch      = ls_order-charg
-          plant      = ls_order-werks
-      ) TO lt_items.
+      CLEAR: lt_items, lt_schedules, lt_partners, lt_partneraddress, lt_order_text, ls_header.
 
-      " ── Schedule line ───────────────────────────────────────────────────
-      DATA lt_schedules TYPE TABLE OF bapischdl.
-      CLEAR lt_schedules.
-      APPEND VALUE #(
-          itm_number = ls_order-posnr
-          req_date   = ls_order-vdatu
-          req_qty    = ls_order-kwmeng
-      ) TO lt_schedules.
+      LOOP AT GROUP <bstnk_group> INTO ls_order.
 
-      " ── Fire async task ─────────────────────────────────────────────────
-      CALL FUNCTION 'Z_SD_CREATE_SALESORDER'
-        STARTING NEW TASK lv_task
-        CALLING me->on_bapi_return ON END OF TASK
-        EXPORTING
-          i_header    = ls_header
-        TABLES
-          t_items     = lt_items
-          t_partners  = lt_partners
-          t_schedules = lt_schedules.
+        APPEND VALUE #( taskname = lv_task  stg_guid = ls_order-stg_guid ) TO lt_map.
 
-      lv_batch_done = lv_batch_done + 1.
+        IF lv_header_set = abap_false.
+          "---- Header  -----------------------------------------------------"
+          ls_header = VALUE bapisdhd1(
+              doc_type   = ls_order-auart
+              sales_org  = ls_order-vkorg
+              distr_chan  = ls_order-vtweg
+              division   = ls_order-spart
+              sales_off  = ls_order-vkbur
+              ord_reason = ls_order-augru
+              purch_no_c = ls_order-bstnk
+              purch_date = ls_order-bstdk
+              req_date_h = ls_order-vdatu
+          ).
 
-      " ── If batch of 5 reached, wait for all in this batch to finish ─────
-      IF lv_batch_done >= lc_max_parallel.
+          " ----- Partners -------------------------------------------------"
+          IF ls_order-kunnr_ag IS NOT INITIAL.
+            APPEND VALUE #( partn_role = 'AG' partn_numb = |{ ls_order-kunnr_ag ALPHA = IN }| ) TO lt_partners.
+          ENDIF.
+          IF ls_order-kunnr_we IS NOT INITIAL.
 
-        DATA(lv_expected) = gv_tasks_done + lv_batch_done.
-        WAIT FOR ASYNCHRONOUS TASKS UNTIL gv_tasks_done >= lv_expected
-          UP TO 300 SECONDS.
+            CLEAR: ls_addr.
+            ls_addr-name       = ls_order-name1.
+            ls_addr-name_2     = ls_order-name2.
+            ls_addr-street     = ls_order-stras.
+            ls_addr-str_suppl1 = ls_order-str_suppl.
+            ls_addr-city       = ls_order-ort01.
+            ls_addr-region     = ls_order-regio.
+            ls_addr-country    = ls_order-land1.
+            ls_addr-postl_cod1 = ls_order-pstlz.
+            ls_addr-e_mail     = ls_order-smtp_addr.
 
-        CLEAR lv_batch_done.   " reset counter for next batch
+            IF ls_addr IS NOT INITIAL.
+              APPEND VALUE #( partn_role = 'WE' partn_numb = |{ ls_order-kunnr_we ALPHA = IN }| addr_link  = '$1' ) TO lt_partners.
+              ls_addr-addr_no    = '$1'.
+              APPEND ls_addr TO lt_partneraddress.
+            ELSE.
+              APPEND VALUE #( partn_role = 'WE' partn_numb = |{ ls_order-kunnr_we ALPHA = IN }| ) TO lt_partners.
+            ENDIF.
+          ENDIF.
 
-      ENDIF.
+          " ----- Header Long Text -------------------------------------
+          IF ls_order-edi_hdr_text IS NOT INITIAL.
+            APPEND VALUE #(
+                text_id   = 'Z010'
+                langu     = 'EN'
+                text_line = ls_order-edi_hdr_text
+            ) TO lt_order_text.
+          ENDIF.
+
+          lv_header_set = abap_true.
+        ENDIF.
+
+        " --- Item -------------------------------------------"
+        APPEND VALUE #(
+            itm_number = ls_order-posnr
+            material   = ls_order-matnr
+            target_qty = ls_order-kwmeng
+            sales_unit = ls_order-vrkme
+            batch      = ls_order-charg
+            plant      = ls_order-werks
+        ) TO lt_items.
+
+        " ---- Schedule line --------------------------------"
+        APPEND VALUE #(
+            itm_number = ls_order-posnr
+            req_date   = ls_order-vdatu
+            req_qty    = ls_order-kwmeng
+        ) TO lt_schedules.
+
+      ENDLOOP.
+
+
+      "--------Check the Number of Active Tasks before Firing the Next Task ---"
+
+      DO.
+        gv_active_thread = gv_send_jobs - gv_receive_jobs.
+        IF gv_active_thread >= lv_max_tasks.
+          WAIT UP TO 1 SECONDS.
+          CONTINUE.
+        ELSE.
+          EXIT.
+        ENDIF.
+      ENDDO.
+
+      lv_task_error = 0.
+      DO.
+        "---- Fire Asynchronous task -------------------------------------"
+        CALL FUNCTION 'Z_SD_CREATE_SALESORDER'
+          STARTING NEW TASK lv_task
+          DESTINATION IN GROUP lv_appsrv_som
+          CALLING me->on_bapi_return ON END OF TASK
+          EXPORTING
+            i_mode                = lv_processmode "'BAPI' "'IDOC'
+            i_idoc_cntrl          = ls_edidc
+            i_header              = ls_header
+          TABLES
+            t_items               = lt_items
+            t_partners            = lt_partners
+            t_schedules           = lt_schedules
+            t_partneraddress      = lt_partneraddress
+            t_order_text          = lt_order_text
+          EXCEPTIONS
+            resource_failure      = 1   " no free WP available
+            system_failure        = 2   " target system failure
+            communication_failure = 3   " RFC connection issue
+            OTHERS                = 4.
+        CASE sy-subrc.
+          WHEN 0.
+            gv_send_jobs = gv_send_jobs + 1.
+            gv_active_thread = gv_send_jobs - gv_receive_jobs.
+            EXIT.
+          WHEN 1 OR 3.
+            " resource_failure or communication_failure → wait & retry
+            lv_task_error += 1.
+            IF lv_task_error > 2.
+              " max retries exceeded, skip this record
+              EXIT.
+            ELSE.
+              WAIT UP TO 1 SECONDS.
+              " CONTINUE loops back in DO to retry
+            ENDIF.
+          WHEN OTHERS.
+            "Try to Create the Order 3 times, else exit and process the next record.
+            EXIT.
+        ENDCASE.
+      ENDDO.
+
+      lv_task_error = 0.
+
+      "If the Active Thread Reached to Max Limit, then wait for Tasks to get freed up
+      DO.
+        gv_active_thread = gv_send_jobs - gv_receive_jobs.
+        IF gv_active_thread >= lv_max_tasks.
+          WAIT UP TO 1 SECONDS.
+          CONTINUE.
+        ELSE.
+          EXIT.
+        ENDIF.
+      ENDDO.
+
+*      lv_batch_done = lv_batch_done + 1.
+*
+*      " --- If batch of 40 reached, wait for all in this batch to finish ---
+*      IF lv_batch_done >= lv_max_tasks. "lc_max_parallel.
+*
+*        DATA(lv_expected) = gv_tasks_done + lv_batch_done.
+*        WAIT FOR ASYNCHRONOUS TASKS UNTIL gv_tasks_done >= lv_expected
+*          UP TO 300 SECONDS.
+*
+*        CLEAR lv_batch_done.   " reset counter for next batch
+*
+*      ENDIF.
 
     ENDLOOP.
 
-    " ── Wait for any remaining tasks in the last (partial) batch ────────────
-    IF lv_batch_done > 0.
-      DATA(lv_total_tasks) = lines( lt_new_orders ).
-      WAIT FOR ASYNCHRONOUS TASKS UNTIL gv_tasks_done >= lv_total_tasks
-        UP TO 300 SECONDS.
-    ENDIF.
+    " --- Wait for any remaining tasks in the last (partial) batch ------
+*    IF lv_batch_done > 0.
+*      DATA(lv_total_tasks) = lines( lt_new_orders ).
+*      WAIT FOR ASYNCHRONOUS TASKS UNTIL gv_tasks_done >= lv_total_tasks
+*        UP TO 300 SECONDS.
+*    ENDIF.
 
-    " ── Build EML update from collected results ──────────────────────────────
+    "Wait for all the Tasks to get Completed
+    DO.
+      gv_active_thread = gv_send_jobs - gv_receive_jobs.
+      IF gv_active_thread > 0.
+        WAIT UP TO 1 SECONDS.
+        CONTINUE.
+      ELSE.
+        EXIT.
+      ENDIF.
+    ENDDO.
+
+    " ---- Build EML update from collected results --------
     GET TIME STAMP FIELD lv_timestamp.
 
     LOOP AT lt_new_orders INTO ls_order.
@@ -539,17 +700,14 @@ CLASS lhc_zi_sd_stg_orders IMPLEMENTATION.
       DATA(lv_task_name) = VALUE char32( lt_map[ stg_guid = ls_order-stg_guid ]-taskname OPTIONAL ).
       READ TABLE gt_task_results WITH KEY task = lv_task_name INTO DATA(ls_result).
 
-*      READ TABLE gt_task_results
-*        WITH KEY stgguid = ls_order-stg_guid
-*        INTO DATA(ls_result).
-
       IF sy-subrc = 0 AND ls_result-success = abap_true.
         APPEND VALUE #(
             stgguid                = ls_order-stg_guid
             status                 = 'S'
             statusmsg              = |SO { ls_result-vbeln } created|
+            vbeln                  = ls_result-vbeln
             lastchangedat          = lv_timestamp
-            lastchangedby          = sy-uname "cl_abap_context_info=>get_user_alias( )
+            lastchangedby          = sy-uname
             %control-status        = if_abap_behv=>mk-on
             %control-statusmsg     = if_abap_behv=>mk-on
             %control-lastchangedat = if_abap_behv=>mk-on
@@ -561,9 +719,9 @@ CLASS lhc_zi_sd_stg_orders IMPLEMENTATION.
             status                 = 'E'
             statusmsg              = COND #( WHEN ls_result-message IS NOT INITIAL
                                              THEN ls_result-message
-                                             ELSE 'BAPI call failed or timed out' )
+                                             ELSE 'Sales Order creation failed!' )
             lastchangedat          = lv_timestamp
-            lastchangedby          = sy-uname "cl_abap_context_info=>get_user_alias( )
+            lastchangedby          = sy-uname
             %control-status        = if_abap_behv=>mk-on
             %control-statusmsg     = if_abap_behv=>mk-on
             %control-lastchangedat = if_abap_behv=>mk-on
@@ -576,11 +734,11 @@ CLASS lhc_zi_sd_stg_orders IMPLEMENTATION.
     IF lt_update IS NOT INITIAL.
       MODIFY ENTITIES OF zi_sd_stg_orders IN LOCAL MODE
         ENTITY orders
-          UPDATE FIELDS ( status statusmsg lastchangedat lastchangedby )
+          UPDATE FIELDS ( status statusmsg vbeln lastchangedat lastchangedby )
           WITH lt_update
         REPORTED DATA(lv_reported).
 
-      "── Read back updated records to return as result ────────────────────
+      "------ Read back updated records to return as result ------------"
       READ ENTITIES OF zi_sd_stg_orders IN LOCAL MODE
         ENTITY orders
           ALL FIELDS
@@ -589,7 +747,7 @@ CLASS lhc_zi_sd_stg_orders IMPLEMENTATION.
         RESULT DATA(lt_result_orders)
         FAILED DATA(lv_read_failed).
 
-      "── Populate result using CID from keys[ 1 ] (static action) ─────────
+      "---- Populate result using CID from keys[ 1 ] (static action) -----"
       DATA(lv_cid) = keys[ 1 ]-%cid.
 
       result = VALUE #(
@@ -606,23 +764,45 @@ CLASS lhc_zi_sd_stg_orders IMPLEMENTATION.
     DATA lt_return TYPE TABLE OF bapiret2.
     DATA lv_vbeln  TYPE vbeln_va.
 
-    RECEIVE RESULTS FROM FUNCTION 'Z_SD_CREATE_SALESORDER'
-      IMPORTING
-        e_vbeln  = lv_vbeln
-      TABLES
-        t_return = lt_return.
+    DATA: lv_err_count TYPE i VALUE 0.
 
     DATA(lv_success) = abap_true.
     DATA(lv_message) = ||.
 
-    LOOP AT lt_return INTO DATA(ls_ret)
-      WHERE type CA 'EAX'.
+    gv_receive_jobs = gv_receive_jobs + 1.
+
+    RECEIVE RESULTS FROM FUNCTION 'Z_SD_CREATE_SALESORDER'
+      IMPORTING
+        e_vbeln  = lv_vbeln
+      TABLES
+        t_return = lt_return
+      EXCEPTIONS
+        resource_failure = 1
+        system_failure   = 2
+        communication_failure = 3
+        runtime_failure       = 4
+        OTHERS = 5.
+
+    IF sy-subrc <> 0.
+      " Handle receive error (e.g. log it, set lv_success = abap_false, etc.)
       lv_success = abap_false.
-      lv_message = |{ ls_ret-message }|.
-      EXIT.
+      lv_message = |Error receiving results for task { p_task }|.
+    ENDIF.
+
+    LOOP AT lt_return INTO DATA(ls_ret)
+      WHERE type EQ 'E'.
+      lv_err_count += 1.
+      lv_success = abap_false.
+      IF lv_err_count = 1.
+        lv_message = |{ lv_err_count } -| && |{ ls_ret-message }|.
+      ELSE.
+        lv_message = |{ lv_message },| & |{ lv_err_count } -| && |{ ls_ret-message }|.
+      ENDIF.
+      IF lv_err_count > 4.
+        EXIT.
+      ENDIF.
     ENDLOOP.
 
-    " No COMMIT/ROLLBACK here - already done inside Z_SD_CREATE_SALESORDER
 
     APPEND VALUE #(
         task = p_task
@@ -631,7 +811,7 @@ CLASS lhc_zi_sd_stg_orders IMPLEMENTATION.
         message = lv_message
     ) TO gt_task_results.
 
-    ADD 1 TO gv_tasks_done.
+    "ADD 1 TO gv_tasks_done.
 
 
   ENDMETHOD.
@@ -640,7 +820,7 @@ CLASS lhc_zi_sd_stg_orders IMPLEMENTATION.
 
     "Get all Guids for deletion from DB Table ZSD_STG_ORDERS
     SELECT stg_guid FROM zsd_stg_orders
-      WHERE status <> ' ' "AND created_by = @sy-uname
+      WHERE status <> ' ' AND created_by = @sy-uname
       INTO TABLE @DATA(lt_keys).
 
     IF lt_keys IS NOT INITIAL.

@@ -1,0 +1,756 @@
+CLASS lhc_zi_sd_stg_orders DEFINITION INHERITING FROM cl_abap_behavior_handler.
+
+  PUBLIC SECTION.
+
+    METHODS on_bapi_return IMPORTING p_task TYPE char32.
+
+  PRIVATE SECTION.
+
+    TYPES: BEGIN OF ty_task_result,
+             task    TYPE char32,
+             vbeln   TYPE vbeln_va,
+             success TYPE abap_bool,
+             message TYPE string,
+           END OF ty_task_result.
+
+    CLASS-DATA:
+      gv_tasks_done   TYPE i,
+      gt_task_results TYPE TABLE OF ty_task_result WITH DEFAULT KEY.
+
+    METHODS get_instance_authorizations FOR INSTANCE AUTHORIZATION
+      IMPORTING keys REQUEST requested_authorizations FOR orders RESULT result.
+
+    METHODS setadmindata FOR DETERMINE ON SAVE
+      IMPORTING keys FOR orders~setadmindata.
+
+    METHODS setinitialstatus FOR DETERMINE ON SAVE
+      IMPORTING keys FOR orders~setinitialstatus.
+
+    METHODS validatemandatory FOR VALIDATE ON SAVE
+      IMPORTING keys FOR orders~validatemandatory.
+
+    METHODS validatesalesorg FOR VALIDATE ON SAVE
+      IMPORTING keys FOR orders~validatesalesorg.
+
+    METHODS excel_upload FOR MODIFY
+      IMPORTING keys FOR ACTION orders~excel_upload RESULT result.
+
+    METHODS staging_data FOR MODIFY
+      IMPORTING keys FOR ACTION orders~staging_data RESULT result.
+
+    METHODS updateadmindata FOR DETERMINE ON SAVE
+      IMPORTING keys FOR orders~updateadmindata.
+
+    METHODS process_staging FOR MODIFY
+      IMPORTING keys FOR ACTION orders~process_staging RESULT result.
+
+    METHODS delete_staging FOR MODIFY
+      IMPORTING keys FOR ACTION orders~delete_staging RESULT result.
+
+ENDCLASS.
+
+
+CLASS lhc_zi_sd_stg_orders IMPLEMENTATION.
+
+  METHOD get_instance_authorizations.
+  ENDMETHOD.
+
+
+  METHOD setadmindata.
+
+    READ ENTITIES OF zi_sd_stg_orders IN LOCAL MODE
+      ENTITY orders
+        FIELDS ( createdat createdby )
+        WITH CORRESPONDING #( keys )
+      RESULT DATA(lt_orders)
+      FAILED DATA(lv_failed).
+
+    DATA lt_update    TYPE TABLE FOR UPDATE zi_sd_stg_orders\\orders.
+    DATA lv_timestamp TYPE timestampl.
+
+    GET TIME STAMP FIELD lv_timestamp.
+
+    LOOP AT lt_orders INTO DATA(ls_order).
+      IF ls_order-createdat IS INITIAL.
+        APPEND VALUE #(
+            stgguid                = ls_order-stgguid
+            createdat              = lv_timestamp
+            createdby              = sy-uname
+            lastchangedat          = lv_timestamp
+            lastchangedby          = sy-uname
+            %control-createdat     = if_abap_behv=>mk-on
+            %control-createdby     = if_abap_behv=>mk-on
+            %control-lastchangedat = if_abap_behv=>mk-on
+            %control-lastchangedby = if_abap_behv=>mk-on
+        ) TO lt_update.
+      ENDIF.
+    ENDLOOP.
+
+    IF lt_update IS NOT INITIAL.
+      MODIFY ENTITIES OF zi_sd_stg_orders IN LOCAL MODE
+        ENTITY orders
+          UPDATE FIELDS ( createdat createdby lastchangedat lastchangedby )
+          WITH lt_update
+        REPORTED DATA(lv_reported).
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD setinitialstatus.
+
+    READ ENTITIES OF zi_sd_stg_orders IN LOCAL MODE
+      ENTITY orders
+        FIELDS ( status )
+        WITH CORRESPONDING #( keys )
+      RESULT DATA(lt_orders)
+      FAILED DATA(lv_failed).
+
+    DATA lt_update TYPE TABLE FOR UPDATE zi_sd_stg_orders\\orders.
+
+    LOOP AT lt_orders INTO DATA(ls_order).
+      IF ls_order-status IS INITIAL.
+        APPEND VALUE #(
+            stgguid              = ls_order-stgguid
+            status               = 'N'
+            statusmsg            = 'New'
+            %control-status      = if_abap_behv=>mk-on
+            %control-statusmsg   = if_abap_behv=>mk-on
+        ) TO lt_update.
+      ENDIF.
+    ENDLOOP.
+
+    IF lt_update IS NOT INITIAL.
+      MODIFY ENTITIES OF zi_sd_stg_orders IN LOCAL MODE
+        ENTITY orders
+          UPDATE FIELDS ( status statusmsg )
+          WITH lt_update
+        REPORTED DATA(lv_reported).
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD validatemandatory.
+    "── MATNR is now on the items table – validate header-level fields only ──
+
+    READ ENTITIES OF zi_sd_stg_orders IN LOCAL MODE
+      ENTITY orders
+        FIELDS ( auart vkorg )
+        WITH CORRESPONDING #( keys )
+      RESULT DATA(lt_orders)
+      FAILED DATA(lv_failed).
+
+    LOOP AT lt_orders INTO DATA(ls_order).
+
+      IF ls_order-auart IS INITIAL.
+        APPEND VALUE #( stgguid = ls_order-stgguid ) TO failed-orders.
+        APPEND VALUE #(
+            stgguid        = ls_order-stgguid
+            %msg           = new_message_with_text(
+                               severity = if_abap_behv_message=>severity-error
+                               text     = 'Order Type (AUART) is mandatory' )
+            %element-auart = if_abap_behv=>mk-on
+        ) TO reported-orders.
+      ENDIF.
+
+      IF ls_order-vkorg IS INITIAL.
+        APPEND VALUE #( stgguid = ls_order-stgguid ) TO failed-orders.
+        APPEND VALUE #(
+            stgguid        = ls_order-stgguid
+            %msg           = new_message_with_text(
+                               severity = if_abap_behv_message=>severity-error
+                               text     = 'Sales Organisation (VKORG) is mandatory' )
+            %element-vkorg = if_abap_behv=>mk-on
+        ) TO reported-orders.
+      ENDIF.
+
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+  METHOD validatesalesorg.
+
+    READ ENTITIES OF zi_sd_stg_orders IN LOCAL MODE
+      ENTITY orders
+        FIELDS ( vkorg )
+        WITH CORRESPONDING #( keys )
+      RESULT DATA(lt_orders)
+      FAILED DATA(lv_failed).
+
+    LOOP AT lt_orders INTO DATA(ls_order).
+
+      IF ls_order-vkorg IS INITIAL.
+        CONTINUE.  " already handled by validateMandatory
+      ENDIF.
+
+      SELECT SINGLE vkorg
+        FROM  tvko
+        WHERE vkorg = @ls_order-vkorg
+        INTO  @DATA(lv_vkorg).
+
+      IF sy-subrc <> 0.
+        APPEND VALUE #( stgguid = ls_order-stgguid ) TO failed-orders.
+        APPEND VALUE #(
+            stgguid        = ls_order-stgguid
+            %msg           = new_message_with_text(
+                               severity = if_abap_behv_message=>severity-error
+                               text     = |Sales Org '{ ls_order-vkorg }' does not exist| )
+            %element-vkorg = if_abap_behv=>mk-on
+        ) TO reported-orders.
+      ENDIF.
+
+    ENDLOOP.
+
+  ENDMETHOD.
+
+
+  METHOD excel_upload.
+    "══════════════════════════════════════════════════════════════════════════
+    " Parse JSON → group rows by BSTNK (PO Number)
+    " → deep-insert one header + N items per unique PO Number
+    "══════════════════════════════════════════════════════════════════════════
+
+    "── Local types ───────────────────────────────────────────────────────────
+    TYPES:
+      BEGIN OF ty_order_row,
+        vbak_auart      TYPE zsd_stg_orders-auart,
+        vbak_vkorg      TYPE zsd_stg_orders-vkorg,
+        vbak_vtweg      TYPE zsd_stg_orders-vtweg,
+        vbak_spart      TYPE zsd_stg_orders-spart,
+        vbak_vkbur      TYPE zsd_stg_orders-vkbur,
+        vbak_kunnr      TYPE zsd_stg_orders-kunnr_ag,
+        vbrk_kunwe      TYPE zsd_stg_orders-kunnr_we,
+        vbak_augru      TYPE zsd_stg_orders-augru,
+        vbak_bstnk      TYPE zsd_stg_orders-bstnk,
+        vbak_bstdk      TYPE zsd_stg_orders-bstdk,
+        vbak_vdatu      TYPE zsd_stg_orders-vdatu,
+        kna1_name1      TYPE zsd_stg_orders-name1,
+        kna1_name2      TYPE zsd_stg_orders-name2,
+        kna1_stras      TYPE zsd_stg_orders-stras,
+        adrc_str_suppl1 TYPE zsd_stg_orders-str_suppl,
+        kna1_ort01      TYPE zsd_stg_orders-ort01,
+        kna1_regio      TYPE zsd_stg_orders-regio,
+        kna1_pstlz      TYPE zsd_stg_orders-pstlz,
+        adr6_smtp_addr  TYPE zsd_stg_orders-smtp_addr,
+        vbap_posnr      TYPE zsd_stg_orders_i-posnr,
+        vbap_matnr      TYPE zsd_stg_orders_i-matnr,
+        vbap_kwmeng     TYPE zsd_stg_orders_i-kwmeng,
+        vbap_meins      TYPE zsd_stg_orders_i-vrkme,
+        vbap_charg      TYPE zsd_stg_orders_i-charg,
+        vbap_werks      TYPE zsd_stg_orders_i-werks,
+      END OF ty_order_row,
+      tt_order_rows TYPE STANDARD TABLE OF ty_order_row WITH DEFAULT KEY.
+
+    DATA lt_rows      TYPE tt_order_rows.
+    DATA lt_create    TYPE TABLE FOR CREATE zi_sd_stg_orders\\orders.
+    DATA lt_items_all TYPE TABLE FOR CREATE zi_sd_stg_orders\\orders\\_items.
+
+    "── Guard ─────────────────────────────────────────────────────────────────
+    READ TABLE keys INDEX 1 INTO DATA(ls_key).
+    IF sy-subrc <> 0 OR ls_key-%param-filecontent IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    "── Deserialise JSON array ─────────────────────────────────────────────────
+    TRY.
+        /ui2/cl_json=>deserialize(
+          EXPORTING json        = ls_key-%param-filecontent
+                    pretty_name = /ui2/cl_json=>pretty_mode-camel_case
+          CHANGING  data        = lt_rows ).
+      CATCH cx_root INTO DATA(lx_json).
+        APPEND VALUE #(
+            %cid = ls_key-%cid
+            %msg = new_message_with_text(
+                     severity = if_abap_behv_message=>severity-error
+                     text     = |JSON parse error: { lx_json->get_text( ) }| )
+        ) TO reported-orders.
+        RETURN.
+    ENDTRY.
+
+    IF lt_rows IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    "── Group rows by BSTNK; one header + N items per unique PO Number ─────────
+    DATA(lv_cid_counter) = 1.
+
+    LOOP AT lt_rows INTO DATA(ls_row)
+        GROUP BY ls_row-vbak_bstnk
+        ASCENDING REFERENCE INTO DATA(lv_group).
+
+      DATA(lv_cid) = |UPLOAD_{ lv_cid_counter }|.
+
+      "── Take header fields from the first row of the group ──────────────────
+      DATA(ls_first) = ls_row.   " LOOP AT GROUP sets ls_row to last member;
+                                  " re-read the first member explicitly
+      LOOP AT GROUP lv_group INTO DATA(ls_grp_row).
+        ls_first = ls_grp_row.
+        EXIT.  " only need the first row for header data
+      ENDLOOP.
+
+      "── Append header create entry ───────────────────────────────────────────
+      APPEND VALUE #(
+          %cid     = lv_cid
+          auart    = ls_first-vbak_auart
+          vkorg    = ls_first-vbak_vkorg
+          vtweg    = ls_first-vbak_vtweg
+          spart    = ls_first-vbak_spart
+          vkbur    = ls_first-vbak_vkbur
+          kunnrag  = ls_first-vbak_kunnr
+          kunnrwe  = ls_first-vbrk_kunwe
+          augru    = ls_first-vbak_augru
+          bstnk    = ls_first-vbak_bstnk
+          bstdk    = ls_first-vbak_bstdk
+          vdatu    = ls_first-vbak_vdatu
+          name1    = ls_first-kna1_name1
+          name2    = ls_first-kna1_name2
+          stras    = ls_first-kna1_stras
+          strsuppl = ls_first-adrc_str_suppl1
+          ort01    = ls_first-kna1_ort01
+          regio    = ls_first-kna1_regio
+          pstlz    = ls_first-kna1_pstlz
+          smtpaddr = ls_first-adr6_smtp_addr
+      ) TO lt_create.
+
+      "── Append item create entries (all rows in the group) ───────────────────
+      LOOP AT GROUP lv_group INTO DATA(ls_item_row).
+        APPEND VALUE #(
+            %cid_ref = lv_cid
+            posnr    = ls_item_row-vbap_posnr
+            matnr    = ls_item_row-vbap_matnr
+            kwmeng   = ls_item_row-vbap_kwmeng
+            vrkme    = ls_item_row-vbap_meins
+            charg    = ls_item_row-vbap_charg
+            werks    = ls_item_row-vbap_werks
+        ) TO lt_items_all.
+      ENDLOOP.
+
+      lv_cid_counter = lv_cid_counter + 1.
+
+    ENDLOOP.
+
+    "── EML: deep create — header records ─────────────────────────────────────
+    MODIFY ENTITIES OF zi_sd_stg_orders IN LOCAL MODE
+      ENTITY orders
+        CREATE FIELDS (
+            auart vkorg vtweg spart vkbur
+            kunnrag kunnrwe augru
+            bstnk bstdk vdatu
+            name1 name2 stras strsuppl
+            ort01 regio pstlz smtpaddr
+        )
+        WITH lt_create
+      "── EML: create child items via composition association ─────────────────
+      CREATE BY \_items
+        FIELDS ( posnr matnr kwmeng vrkme charg werks )
+        WITH lt_items_all
+      MAPPED   DATA(lv_mapped)
+      FAILED   DATA(lv_failed_create)
+      REPORTED DATA(lv_reported_create).
+
+    IF lv_failed_create-orders IS NOT INITIAL.
+      APPEND LINES OF lv_failed_create-orders   TO failed-orders.
+      APPEND LINES OF lv_reported_create-orders TO reported-orders.
+      RETURN.
+    ENDIF.
+
+    "── Read back created header instances for the action result ──────────────
+    READ ENTITIES OF zi_sd_stg_orders IN LOCAL MODE
+      ENTITY orders
+        ALL FIELDS
+        WITH CORRESPONDING #( lv_mapped-orders )
+      RESULT DATA(lt_created)
+      FAILED DATA(lv_read_failed).
+
+    result = VALUE #(
+        FOR ls_created IN lt_created
+        ( %cid   = ls_key-%cid
+          %param = VALUE #(
+                     BASE CORRESPONDING #( ls_created )
+                     status    = COND #( WHEN ls_created-status IS INITIAL
+                                         THEN 'N' ELSE ls_created-status )
+                     statusmsg = COND #( WHEN ls_created-statusmsg IS INITIAL
+                                         THEN 'New' ELSE ls_created-statusmsg ) ) ) ).
+
+  ENDMETHOD.
+
+
+  METHOD staging_data.
+
+    DATA(lv_rectype) = keys[ 1 ]-%param-rectype.
+
+    CASE lv_rectype.
+      WHEN 'I'.   " New / Error / Modified records
+        SELECT stg_guid FROM zsd_stg_orders
+          WHERE status IN ( 'N','E','M' )
+            AND created_by = @sy-uname
+          INTO TABLE @DATA(lt_keys).
+      WHEN 'S'.   " Successful records
+        SELECT stg_guid FROM zsd_stg_orders
+          WHERE status = 'S'
+            AND created_by = @sy-uname
+          INTO TABLE @DATA(lt_keys).
+      WHEN OTHERS.
+        RETURN.
+    ENDCASE.
+
+    IF lt_keys IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    READ ENTITIES OF zi_sd_stg_orders IN LOCAL MODE
+      ENTITY orders
+        ALL FIELDS
+        WITH VALUE #( FOR ls_key IN lt_keys
+                      ( stgguid = ls_key-stg_guid ) )
+      RESULT DATA(lt_orders)
+      FAILED DATA(lv_failed).
+
+    DATA(lv_cid) = keys[ 1 ]-%cid.
+
+    result = VALUE #(
+        FOR ls_order IN lt_orders
+        ( %cid   = lv_cid
+          %param = CORRESPONDING #( ls_order ) ) ).
+
+  ENDMETHOD.
+
+
+  METHOD updateadmindata.
+
+    READ ENTITIES OF zi_sd_stg_orders IN LOCAL MODE
+      ENTITY orders
+        FIELDS ( stgguid lastchangedat lastchangedby )
+        WITH CORRESPONDING #( keys )
+      RESULT DATA(lt_orders)
+      FAILED DATA(lv_failed).
+
+    DATA lt_update    TYPE TABLE FOR UPDATE zi_sd_stg_orders\\orders.
+    DATA lv_timestamp TYPE timestampl.
+
+    GET TIME STAMP FIELD lv_timestamp.
+
+    LOOP AT lt_orders INTO DATA(ls_order).
+      APPEND VALUE #(
+          stgguid                = ls_order-stgguid
+          lastchangedat          = lv_timestamp
+          lastchangedby          = sy-uname
+          %control-lastchangedat = if_abap_behv=>mk-on
+          %control-lastchangedby = if_abap_behv=>mk-on
+      ) TO lt_update.
+    ENDLOOP.
+
+    IF lt_update IS NOT INITIAL.
+      MODIFY ENTITIES OF zi_sd_stg_orders IN LOCAL MODE
+        ENTITY orders
+          UPDATE FIELDS ( lastchangedat lastchangedby )
+          WITH lt_update
+        REPORTED DATA(lv_reported).
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD process_staging.
+    "══════════════════════════════════════════════════════════════════════════
+    " For each pending header (unique PO Number / BSTNK) fetch ALL its items
+    " from ZSD_STG_ORDERS_I and pass them to the BAPI as multiple line items.
+    "══════════════════════════════════════════════════════════════════════════
+
+    DATA: BEGIN OF ls_map,
+            taskname TYPE char32,
+            stg_guid TYPE zsd_stg_orders-stg_guid,
+          END OF ls_map.
+    DATA lt_map LIKE TABLE OF ls_map.
+
+    "── 1. Fetch pending headers ──────────────────────────────────────────────
+    SELECT stg_guid, auart, vkorg, vtweg, spart, vkbur,
+           kunnr_ag, kunnr_we, augru, bstnk, bstdk, vdatu,
+           name1, name2, stras, str_suppl, ort01, regio, pstlz, smtp_addr
+      FROM zsd_stg_orders
+      WHERE status IN ( 'N','M' )
+        AND created_by = @sy-uname
+      INTO TABLE @DATA(lt_headers).
+
+    IF lt_headers IS INITIAL.
+      RETURN.
+    ENDIF.
+
+    "── 2. Fetch ALL items for the above headers in one SELECT ────────────────
+    SELECT stg_guid, posnr, matnr, kwmeng, vrkme, charg, werks
+      FROM zsd_stg_orders_i
+      FOR ALL ENTRIES IN @lt_headers
+      WHERE stg_guid = @lt_headers-stg_guid
+      INTO TABLE @DATA(lt_all_items).
+
+    CLEAR: gv_tasks_done, gt_task_results.
+
+    DATA lt_update     TYPE TABLE FOR UPDATE zi_sd_stg_orders\\orders.
+    DATA lv_timestamp  TYPE timestampl.
+    DATA lv_batch_done TYPE i.
+    CONSTANTS lc_max_parallel TYPE i VALUE 5.
+
+    GET TIME STAMP FIELD lv_timestamp.
+
+    "── 3. Loop headers: one async BAPI task per header ───────────────────────
+    LOOP AT lt_headers INTO DATA(ls_hdr).
+
+      DATA(lv_task) = |TASK_{ sy-tabix }|.
+      APPEND VALUE #( taskname = lv_task  stg_guid = ls_hdr-stg_guid ) TO lt_map.
+
+      "── Header ────────────────────────────────────────────────────────────
+      DATA(ls_header) = VALUE bapisdhd1(
+          doc_type   = ls_hdr-auart
+          sales_org  = ls_hdr-vkorg
+          distr_chan  = ls_hdr-vtweg
+          division   = ls_hdr-spart
+          sales_off  = ls_hdr-vkbur
+          purch_no_c = ls_hdr-bstnk
+          purch_date = ls_hdr-bstdk
+          req_date_h = ls_hdr-vdatu
+      ).
+
+      "── Partners ──────────────────────────────────────────────────────────
+      DATA lt_partners TYPE TABLE OF bapiparnr.
+      CLEAR lt_partners.
+      IF ls_hdr-kunnr_ag IS NOT INITIAL.
+        APPEND VALUE #(
+            partn_role = 'AG'
+            partn_numb = |{ ls_hdr-kunnr_ag ALPHA = IN }|
+        ) TO lt_partners.
+      ENDIF.
+      IF ls_hdr-kunnr_we IS NOT INITIAL.
+        APPEND VALUE #(
+            partn_role = 'WE'
+            partn_numb = |{ ls_hdr-kunnr_we ALPHA = IN }|
+            addr_link  = '$1'
+        ) TO lt_partners.
+      ENDIF.
+
+      "── Items: ALL line items for this PO Number ──────────────────────────
+      DATA lt_items     TYPE TABLE OF bapisditm.
+      DATA lt_schedules TYPE TABLE OF bapischdl.
+      CLEAR: lt_items, lt_schedules.
+
+      LOOP AT lt_all_items INTO DATA(ls_item)
+          WHERE stg_guid = ls_hdr-stg_guid.
+
+        APPEND VALUE #(
+            itm_number = ls_item-posnr
+            material   = ls_item-matnr
+            target_qty = ls_item-kwmeng
+            sales_unit = ls_item-vrkme
+            batch      = ls_item-charg
+            plant      = ls_item-werks
+        ) TO lt_items.
+
+        APPEND VALUE #(
+            itm_number = ls_item-posnr
+            req_date   = ls_hdr-vdatu
+            req_qty    = ls_item-kwmeng
+        ) TO lt_schedules.
+
+      ENDLOOP.
+
+      "── Partner address ───────────────────────────────────────────────────
+      DATA lt_partneraddress TYPE TABLE OF bapiaddr1.
+      CLEAR lt_partneraddress.
+      APPEND VALUE #(
+          addr_no    = '$1'
+          name       = ls_hdr-name1
+          name_2     = ls_hdr-name2
+          street     = ls_hdr-stras
+          str_suppl1 = ls_hdr-str_suppl
+          city       = ls_hdr-ort01
+          region     = ls_hdr-regio
+          postl_cod1 = ls_hdr-pstlz
+          e_mail     = ls_hdr-smtp_addr
+      ) TO lt_partneraddress.
+
+      "── Fire async task ───────────────────────────────────────────────────
+      CALL FUNCTION 'Z_SD_CREATE_SALESORDER'
+        STARTING NEW TASK lv_task
+        CALLING me->on_bapi_return ON END OF TASK
+        EXPORTING
+          i_header         = ls_header
+        TABLES
+          t_items          = lt_items
+          t_partners       = lt_partners
+          t_schedules      = lt_schedules
+          t_partneraddress = lt_partneraddress.
+
+      lv_batch_done = lv_batch_done + 1.
+
+      "── Wait when batch limit reached ─────────────────────────────────────
+      IF lv_batch_done >= lc_max_parallel.
+        DATA(lv_expected) = gv_tasks_done + lv_batch_done.
+        WAIT FOR ASYNCHRONOUS TASKS UNTIL gv_tasks_done >= lv_expected
+          UP TO 300 SECONDS.
+        CLEAR lv_batch_done.
+      ENDIF.
+
+    ENDLOOP.
+
+    "── 4. Wait for any remaining tasks in the last partial batch ─────────────
+    IF lv_batch_done > 0.
+      DATA(lv_total_tasks) = lines( lt_headers ).
+      WAIT FOR ASYNCHRONOUS TASKS UNTIL gv_tasks_done >= lv_total_tasks
+        UP TO 300 SECONDS.
+    ENDIF.
+
+    "── 5. Build EML update from collected results ────────────────────────────
+    GET TIME STAMP FIELD lv_timestamp.
+
+    LOOP AT lt_headers INTO ls_hdr.
+
+      DATA(lv_task_name) = VALUE char32(
+          lt_map[ stg_guid = ls_hdr-stg_guid ]-taskname OPTIONAL ).
+      READ TABLE gt_task_results WITH KEY task = lv_task_name
+        INTO DATA(ls_result).
+
+      IF sy-subrc = 0 AND ls_result-success = abap_true.
+        APPEND VALUE #(
+            stgguid                = ls_hdr-stg_guid
+            status                 = 'S'
+            statusmsg              = |SO { ls_result-vbeln } created|
+            vbeln                  = ls_result-vbeln
+            lastchangedat          = lv_timestamp
+            lastchangedby          = sy-uname
+            %control-status        = if_abap_behv=>mk-on
+            %control-statusmsg     = if_abap_behv=>mk-on
+            %control-vbeln         = if_abap_behv=>mk-on
+            %control-lastchangedat = if_abap_behv=>mk-on
+            %control-lastchangedby = if_abap_behv=>mk-on
+        ) TO lt_update.
+      ELSE.
+        APPEND VALUE #(
+            stgguid                = ls_hdr-stg_guid
+            status                 = 'E'
+            statusmsg              = COND #(
+                                       WHEN ls_result-message IS NOT INITIAL
+                                       THEN ls_result-message
+                                       ELSE 'BAPI call failed or timed out' )
+            lastchangedat          = lv_timestamp
+            lastchangedby          = sy-uname
+            %control-status        = if_abap_behv=>mk-on
+            %control-statusmsg     = if_abap_behv=>mk-on
+            %control-lastchangedat = if_abap_behv=>mk-on
+            %control-lastchangedby = if_abap_behv=>mk-on
+        ) TO lt_update.
+      ENDIF.
+
+    ENDLOOP.
+
+    IF lt_update IS NOT INITIAL.
+
+      MODIFY ENTITIES OF zi_sd_stg_orders IN LOCAL MODE
+        ENTITY orders
+          UPDATE FIELDS ( status statusmsg vbeln lastchangedat lastchangedby )
+          WITH lt_update
+        REPORTED DATA(lv_reported).
+
+      READ ENTITIES OF zi_sd_stg_orders IN LOCAL MODE
+        ENTITY orders
+          ALL FIELDS
+          WITH VALUE #( FOR ls_upd IN lt_update
+                        ( stgguid = ls_upd-stgguid ) )
+        RESULT DATA(lt_result_orders)
+        FAILED DATA(lv_read_failed).
+
+      DATA(lv_cid) = keys[ 1 ]-%cid.
+
+      result = VALUE #(
+          FOR ls_res IN lt_result_orders
+          ( %cid   = lv_cid
+            %param = CORRESPONDING #( ls_res ) ) ).
+
+    ENDIF.
+
+  ENDMETHOD.
+
+
+  METHOD on_bapi_return.
+
+    DATA lt_return TYPE TABLE OF bapiret2.
+    DATA lv_vbeln  TYPE vbeln_va.
+
+    RECEIVE RESULTS FROM FUNCTION 'Z_SD_CREATE_SALESORDER'
+      IMPORTING
+        e_vbeln  = lv_vbeln
+      TABLES
+        t_return = lt_return.
+
+    DATA(lv_success) = abap_true.
+    DATA(lv_message) = ||.
+
+    LOOP AT lt_return INTO DATA(ls_ret)
+      WHERE type CA 'EAX'.
+      lv_success = abap_false.
+      lv_message = ls_ret-message.
+      EXIT.
+    ENDLOOP.
+
+    APPEND VALUE #(
+        task    = p_task
+        vbeln   = lv_vbeln
+        success = lv_success
+        message = lv_message
+    ) TO gt_task_results.
+
+    ADD 1 TO gv_tasks_done.
+
+  ENDMETHOD.
+
+
+  METHOD delete_staging.
+    "══════════════════════════════════════════════════════════════════════════
+    " Deleting the root header via RAP composition automatically cascades
+    " the delete to ZSD_STG_ORDERS_I (child items) — no explicit item
+    " delete statement is needed.
+    "══════════════════════════════════════════════════════════════════════════
+
+    SELECT stg_guid
+      FROM zsd_stg_orders
+      WHERE status <> ' '
+      INTO TABLE @DATA(lt_keys).
+
+    IF lt_keys IS INITIAL.
+      APPEND VALUE #(
+          %msg = new_message_with_text(
+                   severity = if_abap_behv_message=>severity-information
+                   text     = 'No staging records to delete' )
+      ) TO reported-orders.
+      RETURN.
+    ENDIF.
+
+    DATA lt_delete TYPE TABLE FOR DELETE zi_sd_stg_orders\\orders.
+
+    lt_delete = VALUE #(
+        FOR ls_key IN lt_keys
+        ( %key-stgguid = ls_key-stg_guid ) ).
+
+    MODIFY ENTITIES OF zi_sd_stg_orders IN LOCAL MODE
+      ENTITY orders
+        DELETE FROM lt_delete
+      FAILED   DATA(lv_failed)
+      REPORTED DATA(lv_reported).
+
+    IF lv_failed-orders IS INITIAL.
+      APPEND VALUE #(
+          %msg = new_message_with_text(
+                   severity = if_abap_behv_message=>severity-success
+                   text     = 'Staging records deleted successfully' )
+      ) TO reported-orders.
+    ELSE.
+      APPEND VALUE #(
+          %msg = new_message_with_text(
+                   severity = if_abap_behv_message=>severity-error
+                   text     = 'Some staging records could not be deleted' )
+      ) TO reported-orders.
+    ENDIF.
+
+  ENDMETHOD.
+
+ENDCLASS.

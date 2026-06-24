@@ -40,10 +40,12 @@ define table zsd_stg_orders {
   ort01           : abap.char(40);
   @EndUserText.label : 'Region / State'
   regio           : abap.char(3);
+  land1           : land1;
   @EndUserText.label : 'Postal Code'
   pstlz           : abap.char(10);
   @EndUserText.label : 'Email Address'
   smtp_addr       : abap.char(241);
+  edi_hdr_text    : tdline;
   @EndUserText.label : 'Item Number'
   posnr           : abap.char(6);
   @EndUserText.label : 'Material'
@@ -60,6 +62,7 @@ define table zsd_stg_orders {
   status          : abap.char(1);
   @EndUserText.label : 'Status Message'
   status_msg      : abap.char(255);
+  vbeln           : vbeln_va;
   created_at      : abp_creation_tstmpl;
   created_by      : abp_creation_user;
   last_changed_at : abp_lastchange_tstmpl;

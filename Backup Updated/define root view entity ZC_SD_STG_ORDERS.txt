@@ -5,30 +5,28 @@
 @UI.headerInfo: {
   typeName:       'Staged Order',
   typeNamePlural: 'Staged Orders',
-  title:          { type: #STANDARD, value: 'Bstnk',  label: 'PO Number' },
+  title:          { type: #STANDARD, value: 'Bstnk',   label: 'PO Number' },
   description:    { type: #STANDARD, value: 'KunnrAg', label: 'Sold-To Party' }
 }
 define root view entity ZC_SD_STG_ORDERS
   provider contract transactional_query
   as projection on ZI_SD_STG_ORDERS
 {
-
       @UI.facet: [
           { id: 'OrderHeader', purpose: #STANDARD, type: #IDENTIFICATION_REFERENCE,
             label: 'Order Header',  position: 10 },
           { id: 'Address',     purpose: #STANDARD, type: #IDENTIFICATION_REFERENCE,
             label: 'Address',       position: 20 },
-          { id: 'OrderItem',   purpose: #STANDARD, type: #IDENTIFICATION_REFERENCE,
-            label: 'Order Item',    position: 30 },
+          { id: 'OrderItems',  purpose: #STANDARD, type: #LINEITEM_REFERENCE,
+            label: 'Order Items',   position: 30,
+            targetElement: '_Items' },
           { id: 'AdminData',   purpose: #STANDARD, type: #IDENTIFICATION_REFERENCE,
             label: 'Admin Data',    position: 40 }
         ]
 
-        //"-------- Key (hidden on UI) -------------------------------------------
       @UI.hidden: true
   key StgGuid,
 
-      //"-------- Header --------------------------------------------------------
       @UI: { lineItem:      [{ position: 10, importance: #HIGH, label: 'Order Type' }],
              identification: [{ position: 10, label: 'Order Type' }] }
       Auart,
@@ -76,7 +74,6 @@ define root view entity ZC_SD_STG_ORDERS
       @EndUserText.label: 'Req. Delivery Date'
       Vdatu,
 
-      //"-------- Address / Partner ---------------------------------------------
       @UI: { lineItem:      [{ position: 120 }], identification: [{ position: 120 }] }
       @EndUserText.label: 'Name 1'
       Name1,
@@ -95,15 +92,11 @@ define root view entity ZC_SD_STG_ORDERS
 
       @UI: { lineItem:      [{ position: 160 }], identification: [{ position: 160 }] }
       @EndUserText.label: 'City'
-      Ort01,            
+      Ort01,
 
       @UI: { lineItem:      [{ position: 170 }], identification: [{ position: 170 }] }
       @EndUserText.label: 'Region'
       Regio,
-      
-      @UI: { lineItem:      [{ position: 175 }], identification: [{ position: 175 }] }
-      @EndUserText.label: 'Country'
-      Land1,      
 
       @UI: { lineItem:      [{ position: 180 }], identification: [{ position: 180 }] }
       @EndUserText.label: 'Postal Code'
@@ -112,57 +105,26 @@ define root view entity ZC_SD_STG_ORDERS
       @UI: { lineItem:      [{ position: 190 }], identification: [{ position: 190 }] }
       @EndUserText.label: 'Email Address'
       SmtpAddr,
- 
-      @UI: { lineItem:      [{ position: 195 }], identification: [{ position: 195 }] }
-      @EndUserText.label: 'EDI Header Text'     
-      EdiHdrText,
 
-      //"-------- Item ----------------------------------------------------------
-      @UI: { lineItem:      [{ position: 200 }], identification: [{ position: 200 }] }
-      @EndUserText.label: 'Item No.'
-      Posnr,
-
-      @UI: { lineItem:      [{ position: 210, importance: #HIGH }],
-             identification: [{ position: 210 }] }
-      @EndUserText.label: 'Material'
-      Matnr,
-
-      @UI: { lineItem:      [{ position: 220 }], identification: [{ position: 220 }] }
-      @EndUserText.label: 'Order Qty'
-      Kwmeng,
-
-      @UI: { lineItem:      [{ position: 230 }], identification: [{ position: 230 }] }
-      @EndUserText.label: 'Base UOM'
-      Vrkme,
-
-      @UI: { lineItem:      [{ position: 240 }], identification: [{ position: 240 }] }
-      @EndUserText.label: 'Batch'
-      Charg,
-
-      @UI: { lineItem:      [{ position: 250 }], identification: [{ position: 250 }] }
-      @EndUserText.label: 'Plant'
-      Werks,
-
-      //"-------- Staging Control -----------------------------------------------
-      @UI: { lineItem:      [{ position: 260, importance: #HIGH, criticality: 'StatusCriticality' }],
-             identification: [{ position: 260 }] }
+      @UI: { lineItem:      [{ position: 200, importance: #HIGH,
+                               criticality: 'StatusCriticality' }],
+             identification: [{ position: 200 }] }
       @EndUserText.label: 'Status'
       Status,
 
-      @UI: { lineItem:      [{ position: 270 }], identification: [{ position: 270 }] }
+      @UI: { lineItem:      [{ position: 210 }], identification: [{ position: 210 }] }
       @EndUserText.label: 'Status Message'
       StatusMsg,
-      
-      @UI: { lineItem:      [{ position: 275 }], identification: [{ position: 275 }] }
+
+      @UI: { lineItem:      [{ position: 215 }], identification: [{ position: 215 }] }
       @EndUserText.label: 'Sales Order'
       Vbeln,
 
-      //"-------- Admin ---------------------------------------------------------
-      @UI: { lineItem:      [{ position: 280 }], identification: [{ position: 280 }] }
+      @UI: { lineItem:      [{ position: 220 }], identification: [{ position: 220 }] }
       @EndUserText.label: 'Created At'
       CreatedAt,
 
-      @UI: { lineItem:      [{ position: 290 }], identification: [{ position: 290 }] }
+      @UI: { lineItem:      [{ position: 230 }], identification: [{ position: 230 }] }
       @EndUserText.label: 'Created By'
       CreatedBy,
 
@@ -170,5 +132,8 @@ define root view entity ZC_SD_STG_ORDERS
       LastChangedAt,
 
       @UI.hidden: true
-      LastChangedBy
+      LastChangedBy,
+
+      //"-------- Composition ---------------------------------------------------
+      _Items : redirected to composition child ZC_SD_STG_ORDERS_I
 }

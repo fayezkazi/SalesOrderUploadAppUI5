@@ -1,0 +1,150 @@
+METHOD excel_upload.
+
+  TYPES:
+    BEGIN OF ty_order_row,
+      vbak_auart      TYPE zsd_stg_orders-auart,
+      vbak_vkorg      TYPE zsd_stg_orders-vkorg,
+      vbak_vtweg      TYPE zsd_stg_orders-vtweg,
+      vbak_spart      TYPE zsd_stg_orders-spart,
+      vbak_vkbur      TYPE zsd_stg_orders-vkbur,
+      vbak_kunnr      TYPE zsd_stg_orders-kunnr_ag,
+      vbrk_kunwe      TYPE zsd_stg_orders-kunnr_we,
+      vbak_augru      TYPE zsd_stg_orders-augru,
+      vbak_bstnk      TYPE zsd_stg_orders-bstnk,
+      vbak_bstdk      TYPE zsd_stg_orders-bstdk,
+      vbak_vdatu      TYPE zsd_stg_orders-vdatu,
+      kna1_name1      TYPE zsd_stg_orders-name1,
+      kna1_name2      TYPE zsd_stg_orders-name2,
+      kna1_stras      TYPE zsd_stg_orders-stras,
+      adrc_str_suppl1 TYPE zsd_stg_orders-str_suppl,
+      kna1_ort01      TYPE zsd_stg_orders-ort01,
+      kna1_regio      TYPE zsd_stg_orders-regio,
+      kna1_pstlz      TYPE zsd_stg_orders-pstlz,
+      adr6_smtp_addr  TYPE zsd_stg_orders-smtp_addr,
+      vbap_posnr      TYPE zsd_stg_orders_i-posnr,
+      vbap_matnr      TYPE zsd_stg_orders_i-matnr,
+      vbap_kwmeng     TYPE zsd_stg_orders_i-kwmeng,
+      vbap_meins      TYPE zsd_stg_orders_i-vrkme,
+      vbap_charg      TYPE zsd_stg_orders_i-charg,
+      vbap_werks      TYPE zsd_stg_orders_i-werks,
+    END OF ty_order_row,
+    tt_order_rows TYPE STANDARD TABLE OF ty_order_row WITH DEFAULT KEY.
+
+  DATA lt_rows   TYPE tt_order_rows.
+  DATA lt_create TYPE TABLE FOR CREATE zi_sd_stg_orders\\orders.
+
+  READ TABLE keys INDEX 1 INTO DATA(ls_key).
+  IF sy-subrc <> 0 OR ls_key-%param-filecontent IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  TRY.
+      /ui2/cl_json=>deserialize(
+        EXPORTING json        = ls_key-%param-filecontent
+                  pretty_name = /ui2/cl_json=>pretty_mode-camel_case
+        CHANGING  data        = lt_rows ).
+    CATCH cx_root INTO DATA(lx_json).
+      APPEND VALUE #(
+          %cid = ls_key-%cid
+          %msg = new_message_with_text(
+                   severity = if_abap_behv_message=>severity-error
+                   text     = |JSON parse error: { lx_json->get_text( ) }| )
+      ) TO reported-orders.
+      RETURN.
+  ENDTRY.
+
+  IF lt_rows IS INITIAL.
+    RETURN.
+  ENDIF.
+
+  "── Group rows by BSTNK: one header entry per unique PO Number ─────────────
+  DATA(lv_cid_counter) = 1.
+
+  LOOP AT lt_rows INTO DATA(ls_row) GROUP BY ls_row-vbak_bstnk
+      ASCENDING REFERENCE INTO DATA(lv_group).
+
+    DATA(lv_cid) = |UPLOAD_{ lv_cid_counter }|.
+
+    "── Build item sub-table for this PO ────────────────────────────────────
+    DATA lt_items_create TYPE TABLE FOR CREATE zi_sd_stg_orders\\orders\\items.
+    CLEAR lt_items_create.
+
+    LOOP AT GROUP lv_group INTO DATA(ls_item_row).
+      APPEND VALUE #(
+          %cid_ref       = lv_cid
+          posnr          = ls_item_row-vbap_posnr
+          matnr          = ls_item_row-vbap_matnr
+          kwmeng         = ls_item_row-vbap_kwmeng
+          vrkme          = ls_item_row-vbap_meins
+          charg          = ls_item_row-vbap_charg
+          werks          = ls_item_row-vbap_werks
+      ) TO lt_items_create.
+    ENDLOOP.
+
+    "── First row in group holds all header fields ───────────────────────────
+    DATA(ls_first) = ls_item_row. " last read = any row, use explicit READ
+    READ TABLE lt_rows WITH KEY vbak_bstnk = lv_group->* INTO ls_first.
+
+    APPEND VALUE #(
+        %cid     = lv_cid
+        auart    = ls_first-vbak_auart
+        vkorg    = ls_first-vbak_vkorg
+        vtweg    = ls_first-vbak_vtweg
+        spart    = ls_first-vbak_spart
+        vkbur    = ls_first-vbak_vkbur
+        kunnrag  = ls_first-vbak_kunnr
+        kunnrwe  = ls_first-vbrk_kunwe
+        augru    = ls_first-vbak_augru
+        bstnk    = ls_first-vbak_bstnk
+        bstdk    = ls_first-vbak_bstdk
+        vdatu    = ls_first-vbak_vdatu
+        name1    = ls_first-kna1_name1
+        name2    = ls_first-kna1_name2
+        stras    = ls_first-kna1_stras
+        strsuppl = ls_first-adrc_str_suppl1
+        ort01    = ls_first-kna1_ort01
+        regio    = ls_first-kna1_regio
+        pstlz    = ls_first-kna1_pstlz
+        smtpaddr = ls_first-adr6_smtp_addr
+        %target  = lt_items_create   "← deep insert of child items
+    ) TO lt_create.
+
+    lv_cid_counter = lv_cid_counter + 1.
+  ENDLOOP.
+
+  "── EML deep create: header + items in one statement ────────────────────────
+  MODIFY ENTITIES OF zi_sd_stg_orders IN LOCAL MODE
+    ENTITY orders
+      CREATE FIELDS (
+          auart vkorg vtweg spart vkbur
+          kunnrag kunnrwe augru
+          bstnk bstdk vdatu
+          name1 name2 stras strsuppl
+          ort01 regio pstlz smtpaddr
+      )
+      WITH lt_create
+      CREATE BY \_items
+        FIELDS ( posnr matnr kwmeng vrkme charg werks )
+        WITH lt_create
+    MAPPED   DATA(lv_mapped)
+    FAILED   DATA(lv_failed_create)
+    REPORTED DATA(lv_reported_create).
+
+  IF lv_failed_create-orders IS NOT INITIAL.
+    APPEND LINES OF lv_failed_create-orders   TO failed-orders.
+    APPEND LINES OF lv_reported_create-orders TO reported-orders.
+    RETURN.
+  ENDIF.
+
+  READ ENTITIES OF zi_sd_stg_orders IN LOCAL MODE
+    ENTITY orders ALL FIELDS
+    WITH CORRESPONDING #( lv_mapped-orders )
+    RESULT DATA(lt_created)
+    FAILED DATA(lv_read_failed).
+
+  result = VALUE #(
+      FOR ls_created IN lt_created
+      ( %cid   = ls_key-%cid
+        %param = CORRESPONDING #( ls_created ) ) ).
+
+ENDMETHOD.

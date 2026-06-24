@@ -35,12 +35,6 @@
             <Annotations Target="cds_zsd_order_upload_srvdef.OrdersUploadType/LastChangedBy">
                 <Annotation Term="UI.Hidden"/>
             </Annotations>
-            <Annotations Target="cds_zsd_order_upload_srvdef.OrdersUploadType/process_staging_ac">
-                <Annotation Term="UI.Hidden"/>
-            </Annotations>
-            <Annotations Target="cds_zsd_order_upload_srvdef.OrdersUploadType/staging_data_ac">
-                <Annotation Term="UI.Hidden"/>
-            </Annotations>
             <Annotations Target="cds_zsd_order_upload_srvdef.OrdersUploadType/Delete_mc">
                 <Annotation Term="UI.Hidden"/>
             </Annotations>
@@ -145,10 +139,16 @@
                             <PropertyValue Property="Value" Path="Regio"/>
                         </Record>
                         <Record Type="UI.DataField">
+                            <PropertyValue Property="Value" Path="Land1"/>
+                        </Record>
+                        <Record Type="UI.DataField">
                             <PropertyValue Property="Value" Path="Pstlz"/>
                         </Record>
                         <Record Type="UI.DataField">
                             <PropertyValue Property="Value" Path="SmtpAddr"/>
+                        </Record>
+                        <Record Type="UI.DataField">
+                            <PropertyValue Property="Value" Path="EdiHdrText"/>
                         </Record>
                         <Record Type="UI.DataField">
                             <PropertyValue Property="Value" Path="Posnr"/>
@@ -173,6 +173,9 @@
                         </Record>
                         <Record Type="UI.DataField">
                             <PropertyValue Property="Value" Path="StatusMsg"/>
+                        </Record>
+                        <Record Type="UI.DataField">
+                            <PropertyValue Property="Value" Path="Vbeln"/>
                         </Record>
                         <Record Type="UI.DataField">
                             <PropertyValue Property="Value" Path="CreatedAt"/>
@@ -241,10 +244,16 @@
                             <PropertyValue Property="Value" Path="Regio"/>
                         </Record>
                         <Record Type="UI.DataField">
+                            <PropertyValue Property="Value" Path="Land1"/>
+                        </Record>
+                        <Record Type="UI.DataField">
                             <PropertyValue Property="Value" Path="Pstlz"/>
                         </Record>
                         <Record Type="UI.DataField">
                             <PropertyValue Property="Value" Path="SmtpAddr"/>
+                        </Record>
+                        <Record Type="UI.DataField">
+                            <PropertyValue Property="Value" Path="EdiHdrText"/>
                         </Record>
                         <Record Type="UI.DataField">
                             <PropertyValue Property="Value" Path="Posnr"/>
@@ -282,6 +291,9 @@
                         </Record>
                         <Record Type="UI.DataField">
                             <PropertyValue Property="Value" Path="StatusMsg"/>
+                        </Record>
+                        <Record Type="UI.DataField">
+                            <PropertyValue Property="Value" Path="Vbeln"/>
                         </Record>
                         <Record Type="UI.DataField">
                             <PropertyValue Property="Value" Path="CreatedAt"/>

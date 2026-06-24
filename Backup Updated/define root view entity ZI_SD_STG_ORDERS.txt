@@ -8,8 +8,8 @@
 }
 define root view entity ZI_SD_STG_ORDERS
   as select from zsd_stg_orders
+  composition [0..*] of ZI_SD_STG_ORDERS_I as _Items
 {
-
       //"-------- Key -----------------------------------------------------------
   key stg_guid        as StgGuid,
 
@@ -32,21 +32,9 @@ define root view entity ZI_SD_STG_ORDERS
       stras           as Stras,
       str_suppl       as StrSuppl,
       ort01           as Ort01,
-      land1           as Land1,
       regio           as Regio,
       pstlz           as Pstlz,
       smtp_addr       as SmtpAddr,
-      
-      //"-------- Header Text ------------------------------------------------------
-      edi_hdr_text     as EdiHdrText,
-
-      //"-------- Item ----------------------------------------------------------
-      posnr           as Posnr,
-      matnr           as Matnr,
-      kwmeng          as Kwmeng,
-      vrkme           as Vrkme,
-      charg           as Charg,
-      werks           as Werks,
 
       //"-------- Staging Control -----------------------------------------------
       status          as Status,
@@ -57,5 +45,8 @@ define root view entity ZI_SD_STG_ORDERS
       created_at      as CreatedAt,
       created_by      as CreatedBy,
       last_changed_at as LastChangedAt,
-      last_changed_by as LastChangedBy
+      last_changed_by as LastChangedBy,
+
+      //"-------- Association ---------------------------------------------------
+      _Items
 }

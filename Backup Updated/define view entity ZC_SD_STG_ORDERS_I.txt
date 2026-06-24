@@ -1,0 +1,44 @@
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'Order Upload Staging – Items Consumption View'
+@Metadata.ignorePropagatedAnnotations: true
+@Metadata.allowExtensions: true
+@UI.headerInfo: {
+  typeName:       'Order Item',
+  typeNamePlural: 'Order Items',
+  title:          { type: #STANDARD, value: 'Posnr', label: 'Item No.' }
+}
+define view entity ZC_SD_STG_ORDERS_I
+  provider contract transactional_query
+  as projection on ZI_SD_STG_ORDERS_I
+{
+      @UI.hidden: true
+  key StgGuid,
+
+      @UI: { lineItem:      [{ position: 10, importance: #HIGH }],
+             identification: [{ position: 10 }] }
+      @EndUserText.label: 'Item No.'
+      Posnr,
+
+      @UI: { lineItem:      [{ position: 20, importance: #HIGH }],
+             identification: [{ position: 20 }] }
+      @EndUserText.label: 'Material'
+      Matnr,
+
+      @UI: { lineItem:      [{ position: 30 }], identification: [{ position: 30 }] }
+      @EndUserText.label: 'Order Qty'
+      Kwmeng,
+
+      @UI: { lineItem:      [{ position: 40 }], identification: [{ position: 40 }] }
+      @EndUserText.label: 'Base UOM'
+      Vrkme,
+
+      @UI: { lineItem:      [{ position: 50 }], identification: [{ position: 50 }] }
+      @EndUserText.label: 'Batch'
+      Charg,
+
+      @UI: { lineItem:      [{ position: 60 }], identification: [{ position: 60 }] }
+      @EndUserText.label: 'Plant'
+      Werks,
+
+      _Order : redirected to parent ZC_SD_STG_ORDERS
+}

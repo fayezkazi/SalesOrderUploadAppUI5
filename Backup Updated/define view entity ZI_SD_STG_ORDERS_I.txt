@@ -1,0 +1,27 @@
+@AccessControl.authorizationCheck: #NOT_REQUIRED
+@EndUserText.label: 'Order Upload Staging – Items Interface View'
+@Metadata.ignorePropagatedAnnotations: true
+@ObjectModel.usageType: {
+  serviceQuality: #X,
+  sizeCategory:   #S,
+  dataClass:      #TRANSACTIONAL
+}
+define view entity ZI_SD_STG_ORDERS_I
+  as select from zsd_stg_orders_i
+  association to parent ZI_SD_STG_ORDERS as _Order
+    on $projection.StgGuid = _Order.StgGuid
+{
+      //"-------- Keys ----------------------------------------------------------
+  key stg_guid  as StgGuid,
+  key posnr     as Posnr,
+
+      //"-------- Item Fields ---------------------------------------------------
+      matnr     as Matnr,
+      kwmeng    as Kwmeng,
+      vrkme     as Vrkme,
+      charg     as Charg,
+      werks     as Werks,
+
+      //"-------- Association ---------------------------------------------------
+      _Order
+}
